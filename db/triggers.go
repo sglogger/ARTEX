@@ -242,6 +242,9 @@ ORDER BY id`, lastID)
 // id > lastID across all live tasks, ordered by id (monotonic watermark → no
 // double-fire). It is driven by tool_result rows (the tool finished, so both input
 // and output are available) and joins back to the paired tool_use row for the input.
+// Provider call IDs are only local to a model session: several asset workers or
+// later turns may reuse them. Select at most one preceding use in the same worker,
+// intent and main-session segment so a result cannot multiply scheduler fires.
 // Only task-execution activity is scanned — triggered agent runs are conversations
 // (conversation_activities), so a tool-call trigger never fires on its own output.
 func (d *DB) NewToolCallsSince(lastID int64) ([]TaskEvent, error) {
@@ -249,7 +252,16 @@ func (d *DB) NewToolCallsSince(lastID int64) ([]TaskEvent, error) {
 SELECT r.id, t.id, t.description, t.goal, r.tool, COALESCE(u.detail,''), COALESCE(r.detail,''), r.is_error
 FROM activity r
 JOIN tasks t ON t.exploration_id = r.exploration_id
-LEFT JOIN activity u ON u.exploration_id = r.exploration_id AND u.tool_use_id = r.tool_use_id AND u.kind='tool_use'
+LEFT JOIN activity u ON u.id = (
+    SELECT p.id FROM activity p
+    WHERE p.exploration_id = r.exploration_id AND p.tool_use_id = r.tool_use_id
+      AND p.tool_use_id <> '' AND p.kind='tool_use' AND p.tool = r.tool
+      AND COALESCE(p.worker,'') = COALESCE(r.worker,'')
+      AND p.node_id IS NOT DISTINCT FROM r.node_id
+      AND COALESCE(p.main_seg,0) = COALESCE(r.main_seg,0)
+      AND p.id < r.id
+    ORDER BY p.id DESC LIMIT 1
+)
 WHERE r.kind='tool_result' AND r.id > $1 AND r.tool <> '' AND t.deleted_at IS NULL
 ORDER BY r.id`, lastID)
 	if err != nil {

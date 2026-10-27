@@ -695,7 +695,7 @@ export default function DashboardPage() {
                 const total = displayedTokens.input + displayedTokens.output;
                 return [
                   {
-                    label: "输入(未命中)",
+                    label: "其余输入",
                     value: displayedTokens.input - displayedTokens.cacheRead,
                     barColor: dailyTrendConfig.input.color!,
                     text: "text-blue-400",
@@ -736,15 +736,19 @@ export default function DashboardPage() {
             {(() => {
               // input 已含缓存 → 命中率 = 缓存命中 / 总输入。
               const denominator = displayedTokens.input;
-              const hitPct = denominator > 0 ? Math.round((displayedTokens.cacheRead / denominator) * 100) : 0;
+              const hitPct = denominator > 0 ? (displayedTokens.cacheRead / denominator) * 100 : 0;
+              const hitLabel = hitPct > 0 && hitPct < 0.01 ? "<0.01%" : `${hitPct.toFixed(2)}%`;
               return (
-                <div className="flex items-center justify-between rounded-lg border bg-muted/20 px-3 py-2 text-[10px]">
-                  <span className="text-muted-foreground">缓存命中率</span>
-                  <span
-                    className={cn("font-semibold tabular-nums", hitPct > 50 ? "text-emerald-400" : "text-amber-400")}
-                  >
-                    {hitPct}%
-                  </span>
+                <div className="rounded-lg border bg-muted/20 px-3 py-2 text-[10px]">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">缓存命中率</span>
+                    <span
+                      className={cn("font-semibold tabular-nums", hitPct > 50 ? "text-emerald-400" : "text-amber-400")}
+                    >
+                      {hitLabel}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-muted-foreground">缓存读取占总输入；未报告缓存不代表未命中。</p>
                 </div>
               );
             })()}

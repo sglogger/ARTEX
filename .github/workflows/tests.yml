@@ -73,7 +73,9 @@ jobs:
             norma/go.sum
       # Exercise the original report/retest paths alongside the new case layer.
       - name: Finding case and existing workflow regression
-        run: go run ./tests/run.go -race ./agent ./db ./server -run 'TestFindingCase|TestFindingWorkflow|TestReportFinding|TestRetest|TestFindingGroups|TestDeepenFinding|TestInheritedActivity|TestConversationListRunningState|TestMerge|TestFinalTrigger|TestTaskContext' -count=1
+        run: go run ./tests/run.go -race ./agent ./db ./server -run 'TestFindingCase|TestFindingWorkflow|TestReportFinding|TestRetest|TestFindingGroups|TestDeepenFinding|TestInheritedActivity|TestConversationListRunningState|TestMerge|TestFinalTrigger|TestTaskContext|TestNewToolCallsSince|TestSchedulerToolCalls' -count=1
+      - name: Anthropic usage persistence regression
+        run: go run ./tests/run.go -race ./llmrec -count=1
       - uses: actions/setup-node@v7
         with:
           node-version: "22"

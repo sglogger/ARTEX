@@ -4,8 +4,14 @@ package llmrec
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"io"
 	"iter"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/Autumn-27/artex/db"
@@ -123,5 +129,140 @@ FROM llm_usage WHERE profile_name=$1`, profile).Scan(&count, &input, &output, &w
 		if count != 1 || input != 23 || output != 5 || worker != "btw" || status != wantStatus {
 			t.Fatalf("early=%v: count=%d usage=%d/%d worker=%q status=%q", early, count, input, output, worker, status)
 		}
+	}
+}
+
+func TestAnthropicStreamUsageRecordedOnce(t *testing.T) {
+	dsn := os.Getenv("ARTEX_PG_DSN")
+	if dsn == "" {
+		t.Skip("requires isolated ARTEX_PG_DSN")
+	}
+	pg, err := db.Open(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pg.Close()
+	if err := pg.EnsureLLMRecordsTable(); err != nil {
+		t.Fatal(err)
+	}
+	if err := pg.EnsureLLMUsageTable(); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name        string
+		start       string
+		deltas      []string
+		interrupted bool
+		want        llm.Usage
+	}{
+		{
+			name:  "gateway finalizes cache",
+			start: `{"input_tokens":14085,"cache_read_input_tokens":0,"output_tokens":0}`,
+			deltas: []string{
+				`{"input_tokens":1797,"cache_read_input_tokens":12288,"output_tokens":169}`,
+			},
+			want: llm.Usage{InputTokens: 14085, OutputTokens: 169, CacheReadTokens: 12288},
+		},
+		{
+			name:  "corrected input and repeated snapshots",
+			start: `{"input_tokens":100,"cache_read_input_tokens":40,"cache_creation_input_tokens":20,"output_tokens":1}`,
+			deltas: []string{
+				`{"input_tokens":10,"cache_read_input_tokens":80,"cache_creation_input_tokens":30,"output_tokens":4}`,
+				`{"output_tokens":9}`,
+				`{"output_tokens":9}`,
+			},
+			want: llm.Usage{InputTokens: 120, OutputTokens: 9, CacheReadTokens: 80, CacheWriteTokens: 30},
+		},
+		{
+			name:        "interrupted stream keeps initial input",
+			start:       `{"input_tokens":100,"cache_read_input_tokens":40,"cache_creation_input_tokens":20,"output_tokens":1}`,
+			interrupted: true,
+			want:        llm.Usage{InputTokens: 160, CacheReadTokens: 40, CacheWriteTokens: 20},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			profile := "anthropic-usage-" + uuid.NewString()
+			t.Cleanup(func() {
+				if _, err := pg.ExecContext(context.Background(), `DELETE FROM llm_records WHERE profile_name=$1`, profile); err != nil {
+					t.Errorf("clean records: %v", err)
+				}
+				if _, err := pg.ExecContext(context.Background(), `DELETE FROM llm_usage WHERE profile_name=$1`, profile); err != nil {
+					t.Errorf("clean usage: %v", err)
+				}
+			})
+			frames := []string{`{"type":"message_start","message":{"usage":` + tt.start + `}}`}
+			for _, usage := range tt.deltas {
+				frames = append(frames, `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":`+usage+`}`)
+			}
+			if !tt.interrupted {
+				frames = append(frames, `{"type":"message_stop"}`)
+			}
+			payload := "data: " + strings.Join(frames, "\n\ndata: ") + "\n\n"
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				if _, err := io.WriteString(w, payload); err != nil {
+					t.Errorf("write stream: %v", err)
+				}
+			}))
+			defer srv.Close()
+			provider, err := llm.NewProvider(llm.Config{
+				Format: llm.FormatAnthropic, BaseURL: srv.URL, Model: "fixture", APIKey: "test-key",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			recorder := Wrap(provider, pg, "fixture", profile, "", "", nil)
+			ctx := transcript.WithSessionID(t.Context(), "exp0-mainagent")
+			var streamErr error
+			for _, err := range recorder.Stream(ctx, llm.CompletionRequest{Messages: []llm.Message{llm.UserText("hello")}}) {
+				if err != nil {
+					streamErr = err
+					break
+				}
+			}
+			wantStatus := "ok"
+			if tt.interrupted {
+				wantStatus = "error"
+				if !errors.Is(streamErr, io.ErrUnexpectedEOF) {
+					t.Fatalf("stream error = %v, want unexpected EOF", streamErr)
+				}
+			} else if streamErr != nil {
+				t.Fatal(streamErr)
+			}
+
+			// Assert the durable ledger and normalized trace agree after one real
+			// provider call, including its error path and duplicate usage frames.
+			var count int
+			var usage llm.Usage
+			var status, response string
+			err = pg.QueryRowContext(t.Context(), `SELECT count(*),sum(input_tokens),sum(output_tokens),
+sum(cache_read),sum(cache_write),max(status) FROM llm_usage WHERE profile_name=$1`, profile).
+				Scan(&count, &usage.InputTokens, &usage.OutputTokens, &usage.CacheReadTokens, &usage.CacheWriteTokens, &status)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if count != 1 || usage != tt.want || status != wantStatus {
+				t.Fatalf("ledger count=%d usage=%+v status=%q, want one row %+v %q", count, usage, status, tt.want, wantStatus)
+			}
+			err = pg.QueryRowContext(t.Context(), `SELECT count(*),sum(input_tokens),sum(output_tokens),
+sum(cache_read),sum(cache_write),max(status),max(response_body) FROM llm_records WHERE profile_name=$1`, profile).
+				Scan(&count, &usage.InputTokens, &usage.OutputTokens, &usage.CacheReadTokens, &usage.CacheWriteTokens, &status, &response)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if count != 1 || usage != tt.want || status != wantStatus {
+				t.Fatalf("trace count=%d usage=%+v status=%q, want one row %+v %q", count, usage, status, tt.want, wantStatus)
+			}
+			var body struct {
+				Usage llm.Usage `json:"usage"`
+			}
+			if err := json.Unmarshal([]byte(response), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Usage != tt.want {
+				t.Fatalf("response usage=%+v, want %+v", body.Usage, tt.want)
+			}
+		})
 	}
 }

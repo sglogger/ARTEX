@@ -31,8 +31,9 @@ func TestAnthropicBlockBoundariesAndSignatures(t *testing.T) {
 		`{"type":"message_stop"}`,
 	}
 	acc := NewAccumulator()
+	var usage anthropicUsage
 	for _, raw := range frames {
-		ev, ok, err := parseAnthropicFrame(raw)
+		ev, ok, err := parseAnthropicFrame(raw, &usage)
 		if err != nil {
 			t.Fatal(err)
 		}

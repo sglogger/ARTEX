@@ -185,11 +185,10 @@ func (r *Recorder) Stream(ctx context.Context, req llm.CompletionRequest) iter.S
 				return
 			}
 			// Always track usage (cheap); accumulate text/thinking only for bodies.
-			// Anthropic (and the other providers) split token usage across events:
-			// message_start carries ONLY the input side (input + cache), message_delta
-			// ONLY the output. They must be FOLDED with Add — overwriting on delta
-			// would zero out the input already counted at start (mirrors the SDK's own
-			// llm.Accumulator; see norma/llm/accumulate.go).
+			// Providers normalize usage into additive deltas. Anthropic reports initial
+			// input at message_start; message_delta may correct input/cache as well as
+			// supply output. Fold every update, including negative corrections, with
+			// Add (mirrors llm.Accumulator in norma/llm/accumulate.go).
 			switch ev.Type {
 			case llm.SEContentBlockStart:
 				if recordBodies && ev.Block != nil {
