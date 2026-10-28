@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-var ErrFindingCaseConflict = errors.New("漏洞组已变更，请重新读取证据后再操作")
+var ErrFindingCaseConflict = errors.New("the finding case has changed; reread the evidence before acting")
 
 type FindingCase struct {
 	ID             int64     `json:"id,string"`
@@ -174,7 +174,7 @@ func sortedFindingIDs(ids []int64) ([]int64, error) {
 	out := []int64{}
 	for _, id := range ids {
 		if id <= 0 {
-			return nil, errors.New("无效漏洞编号")
+			return nil, errors.New("invalid finding id")
 		}
 		if !set[id] {
 			set[id] = true
@@ -183,13 +183,13 @@ func sortedFindingIDs(ids []int64) ([]int64, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
 	if len(out) < 2 {
-		return nil, errors.New("至少需要两条漏洞记录")
+		return nil, errors.New("at least two finding records are required")
 	}
 	return out, nil
 }
 func lockCaseTask(tx *sql.Tx, taskID int64) error {
 	if taskID <= 0 {
-		return errors.New("归并需要仍存在的同一任务")
+		return errors.New("merging requires the same task, which must still exist")
 	}
 	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock($1)`, int64(5100000000000000)+taskID); err != nil {
 		return err
@@ -206,7 +206,7 @@ func (d *DB) mergeFindingCase(ctx context.Context, taskID int64, ids []int64, ti
 		return 0, err
 	}
 	if strings.TrimSpace(title) == "" || strings.TrimSpace(reason) == "" {
-		return 0, errors.New("必须提供漏洞名称及基于证据的归并理由")
+		return 0, errors.New("a finding name and an evidence-based merge reason are required")
 	}
 	var cid int64
 	err = d.WithEvidenceTx(ctx, func(tx *sql.Tx) error {
@@ -230,7 +230,7 @@ func (d *DB) mergeFindingCase(ctx context.Context, taskID int64, ids []int64, ti
 				return err
 			}
 			if !tid.Valid || tid.Int64 != taskID {
-				return errors.New("只能归并同一任务的漏洞")
+				return errors.New("only findings of the same task can be merged")
 			}
 			if group > 0 {
 				groupSet[group] = true
@@ -275,7 +275,7 @@ func (d *DB) mergeFindingCase(ctx context.Context, taskID int64, ids []int64, ti
 			return err
 		}
 		if blocked {
-			return errors.New("人工已否决或撤销这些记录的归并")
+			return errors.New("a human has rejected or undone the merge of these records")
 		}
 		if len(groups) > 0 {
 			cid = groups[0]
@@ -319,7 +319,7 @@ func (d *DB) RemoveFindingCaseMember(ctx context.Context, cid, fid int64, reason
 		return err
 	}
 	if c == nil {
-		return errors.New("归并组不存在")
+		return errors.New("finding case not found")
 	}
 	return d.WithEvidenceTx(ctx, func(tx *sql.Tx) error {
 		var origin int64
@@ -361,7 +361,7 @@ func (d *DB) RemoveFindingCaseMember(ctx context.Context, cid, fid int64, reason
 }
 func (d *DB) UpdateFindingCaseReport(ctx context.Context, cid, version int64, title, report, severity, reason string) error {
 	if !ValidSeverity(severity) || strings.TrimSpace(report) == "" || strings.TrimSpace(reason) == "" || strings.TrimSpace(title) == "" {
-		return errors.New("完整报告、名称、有效等级和评级依据必填")
+		return errors.New("full report, name, valid severity and rating rationale are required")
 	}
 	return d.WithEvidenceTx(ctx, func(tx *sql.Tx) error {
 		c, err := scanCase(tx.QueryRow(`SELECT `+caseColumns+` FROM finding_cases c WHERE id=$1 FOR UPDATE`, cid))
@@ -378,13 +378,13 @@ func (d *DB) UpdateFindingCaseReport(ctx context.Context, cid, version int64, ti
 		if err != nil {
 			return err
 		}
-		_, err = tx.Exec(`INSERT INTO finding_case_events(case_id,action,actor,reason) VALUES($1,'report_updated','reporter',$2)`, cid, "统一报告已更新；评级依据："+reason)
+		_, err = tx.Exec(`INSERT INTO finding_case_events(case_id,action,actor,reason) VALUES($1,'report_updated','reporter',$2)`, cid, "Unified report updated; rating rationale: "+reason)
 		return err
 	})
 }
 func (d *DB) SuggestFindingCase(ctx context.Context, taskID, left, right int64, title, reason string) (int64, error) {
 	if strings.TrimSpace(title) == "" || strings.TrimSpace(reason) == "" {
-		return 0, errors.New("建议需要名称和具体证据理由")
+		return 0, errors.New("a suggestion needs a name and a concrete evidence-based reason")
 	}
 	ids, err := sortedFindingIDs([]int64{left, right})
 	if err != nil {
@@ -401,7 +401,7 @@ func (d *DB) SuggestFindingCase(ctx context.Context, taskID, left, right int64, 
 				return err
 			}
 			if !tid.Valid || tid.Int64 != taskID {
-				return errors.New("只能建议同一任务的归并")
+				return errors.New("only merges within the same task can be suggested")
 			}
 		}
 		var blocked bool
@@ -409,7 +409,7 @@ func (d *DB) SuggestFindingCase(ctx context.Context, taskID, left, right int64, 
 			return err
 		}
 		if blocked {
-			return errors.New("人工已否决该归并")
+			return errors.New("a human has rejected this merge")
 		}
 		return tx.QueryRow(`INSERT INTO finding_case_suggestions(task_id,left_id,right_id,title,reason) VALUES($1,$2,$3,$4,$5) ON CONFLICT(left_id,right_id) DO UPDATE SET reason=EXCLUDED.reason WHERE finding_case_suggestions.state='pending' RETURNING id`, taskID, ids[0], ids[1], title, reason).Scan(&id)
 	})
@@ -453,7 +453,7 @@ func (d *DB) ResolveFindingCaseSuggestion(ctx context.Context, id int64, accept 
 		if n, _ := res.RowsAffected(); n != 1 {
 			return ErrFindingCaseConflict
 		}
-		if _, err := tx.Exec(`INSERT INTO finding_case_blocks(left_id,right_id,reason) VALUES($1,$2,'人工否决') ON CONFLICT DO NOTHING`, s.LeftID, s.RightID); err != nil {
+		if _, err := tx.Exec(`INSERT INTO finding_case_blocks(left_id,right_id,reason) VALUES($1,$2,'Rejected by a human') ON CONFLICT DO NOTHING`, s.LeftID, s.RightID); err != nil {
 			return err
 		}
 		return nil
@@ -485,7 +485,7 @@ func (d *DB) FindingCaseCandidates(fid int64, page, size int) ([]map[string]any,
 		return nil, 0, err
 	}
 	if f == nil || f.TaskID == nil {
-		return nil, 0, errors.New("漏洞任务不可用")
+		return nil, 0, errors.New("the finding's task is unavailable")
 	}
 	if page < 1 {
 		page = 1
@@ -571,26 +571,26 @@ func (d *DB) FindingCaseSummary(id int64) (*DBFinding, error) {
 // database snapshot; pending duplicate suggestions deliberately do not block it.
 func (d *DB) FinishFindingCaseReview(ctx context.Context, conversationID int64, completed bool, reason string) error {
 	if !completed && strings.TrimSpace(reason) == "" {
-		reason = "报告整理未完成"
+		reason = "Report consolidation not completed"
 	}
 	_, err := d.ExecContext(ctx, `
 		WITH result AS (
 			SELECT r.conversation_id, CASE
 				WHEN $2 <> '' THEN $2
 				WHEN r.task_id IS NULL OR NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id=r.task_id)
-					THEN '来源任务已不可用'
+					THEN 'The source task is no longer available'
 				WHEN jsonb_array_length(r.finding_ids)=0 OR EXISTS (
 					SELECT 1 FROM jsonb_array_elements_text(r.finding_ids) selected(id)
 					LEFT JOIN findings f ON f.id=selected.id::bigint
 					WHERE f.id IS NULL OR f.task_id IS DISTINCT FROM r.task_id
 						OR btrim(COALESCE(f.report,''))='' OR f.report_evidence_version<>f.evidence_version
-				) THEN '独立报告未生成或证据版本已过期，请重新整理'
+				) THEN 'Individual reports are missing or their evidence version is outdated; consolidate again'
 				WHEN EXISTS (
 					SELECT 1 FROM finding_case_members m JOIN finding_cases c ON c.id=m.case_id
 					WHERE c.active AND m.finding_id IN (
 						SELECT id::bigint FROM jsonb_array_elements_text(r.finding_ids) selected(id)
 					) AND (btrim(c.report)='' OR c.report_version<>c.version)
-				) THEN '统一报告未生成或版本已过期，请重新生成'
+				) THEN 'The unified report is missing or outdated; regenerate it'
 				ELSE '' END AS error
 			FROM finding_case_review_runs r WHERE r.conversation_id=$1 AND r.state='running'
 		)

@@ -11,7 +11,7 @@ import (
 // pgReady returns the PG handle, or writes 503 and returns nil if unavailable.
 func (s *Server) pg(w http.ResponseWriter) *db.DB {
 	if s.m.pg == nil {
-		writeErr(w, 503, "管理后台数据源(PostgreSQL)未连接")
+		writeErr(w, 503, "admin data source (PostgreSQL) not connected")
 		return nil
 	}
 	return s.m.pg

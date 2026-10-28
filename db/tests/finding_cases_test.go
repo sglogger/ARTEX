@@ -40,7 +40,7 @@ func caseTestDB(t *testing.T) (*DB, *Task, []int64) {
 func TestFindingCaseMergePreservesRecordsAndVersions(t *testing.T) {
 	d, task, ids := caseTestDB(t)
 	ctx := context.Background()
-	id, err := d.MergeFindingCase(ctx, task.ID, ids[:3], "订单越权", "同一接口同一权限检查缺失", "reporter")
+	id, err := d.MergeFindingCase(ctx, task.ID, ids[:3], "order IDOR", "same endpoint missing the same permission check", "reporter")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestFindingCaseMergePreservesRecordsAndVersions(t *testing.T) {
 	if same.Version != c.Version {
 		t.Fatal("idempotent merge invalidated report")
 	}
-	if err := d.UpdateFindingCaseReport(ctx, id, c.Version, "订单越权", "complete PoC", "high", "verified sensitive data"); err != nil {
+	if err := d.UpdateFindingCaseReport(ctx, id, c.Version, "order IDOR", "complete PoC", "high", "verified sensitive data"); err != nil {
 		t.Fatal(err)
 	}
 	for i, fid := range ids[:3] {
@@ -324,12 +324,12 @@ func TestFindingCaseReviewVerifiesSavedReports(t *testing.T) {
 				if _, err := d.Exec(`UPDATE findings SET report='' WHERE id=$1`, ids[0]); err != nil {
 					t.Fatal(err)
 				}
-				wantState, wantError = "failed", "独立报告"
+				wantState, wantError = "failed", "Individual report"
 			case "stale_original":
 				if _, err := d.Exec(`UPDATE findings SET evidence_version=evidence_version+1 WHERE id=$1`, ids[0]); err != nil {
 					t.Fatal(err)
 				}
-				wantState, wantError = "failed", "独立报告"
+				wantState, wantError = "failed", "Individual report"
 			case "missing_case", "current_case", "stale_case":
 				cid, err := d.MergeFindingCase(ctx, task.ID, ids[:2], "orders", "same verified defect", "reporter")
 				if err != nil {
@@ -350,18 +350,18 @@ func TestFindingCaseReviewVerifiesSavedReports(t *testing.T) {
 					}
 				}
 				if scenario != "current_case" {
-					wantState, wantError = "failed", "统一报告"
+					wantState, wantError = "failed", "unified report"
 				}
 			case "deleted_finding":
 				if _, err := d.DeleteFinding(ids[0]); err != nil {
 					t.Fatal(err)
 				}
-				wantState, wantError = "failed", "独立报告"
+				wantState, wantError = "failed", "Individual report"
 			case "deleted_task":
 				if err := d.DeleteTask(task.ID); err != nil {
 					t.Fatal(err)
 				}
-				wantState, wantError = "failed", "来源任务"
+				wantState, wantError = "failed", "source task"
 			case "model_failure":
 				wantState, wantError = "failed", "model unavailable"
 			}

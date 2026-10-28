@@ -84,7 +84,7 @@ func TestSetGoalsRejectsUnrequestedFlagsBeforePersistence(t *testing.T) {
 			if tc.message != "" {
 				ctx = intercept.WithReviewContext(ctx, "", intercept.ReviewBackground{Source: tc.source, Text: tc.message})
 			}
-			input, _ := json.Marshal(goalItem{Text: tc.objective, GoalType: "inspection", RequiredChecks: []string{"检查已授权的入口"}})
+			input, _ := json.Marshal(goalItem{Text: tc.objective, GoalType: "inspection", RequiredChecks: []string{"check the authorized entry points"}})
 			result, err := tools.setGoals().Call(ctx, input, nil)
 			if err != nil || result.IsError != tc.wantError {
 				t.Fatalf("result=%s err=%v", result.Flatten(), err)
@@ -107,13 +107,13 @@ func TestSetGoalsRejectsUnrequestedFlagsBeforePersistence(t *testing.T) {
 func TestSetGoalsChecksRequiredChecksAndKeepsBatchAlignment(t *testing.T) {
 	d := testDB(t)
 	defer d.Close()
-	task, err := d.CreateTask("batch fixture", "测试普通应用", nil, 0, 0)
+	task, err := d.CreateTask("batch fixture", "test an ordinary application", nil, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer d.DeleteTask(task.ID)
 	tools := NewToolSet(d.Exploration(task.ExplorationID), "goals")
-	input := json.RawMessage(`{"goals":[{"text":"检查登录","goal_type":"inspection","required_checks":["获取flag"]},{"text":"检查上传","goal_type":"inspection","required_checks":["测试授权上传入口"]}]}`)
+	input := json.RawMessage(`{"goals":[{"text":"check login","goal_type":"inspection","required_checks":["obtain the flag"]},{"text":"check upload","goal_type":"inspection","required_checks":["test the authorized upload entry point"]}]}`)
 	result, err := tools.setGoals().Call(t.Context(), input, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -133,7 +133,7 @@ func TestSetGoalsChecksRequiredChecksAndKeepsBatchAlignment(t *testing.T) {
 func TestTaskRequestGuidanceSurvivesSavedPrompts(t *testing.T) {
 	old := PromptOverride
 	t.Cleanup(func() { PromptOverride = old })
-	PromptOverride = func(string) (string, bool) { return "保存的自定义正文", true }
+	PromptOverride = func(string) (string, bool) { return "saved custom body", true }
 	for role, prompt := range map[string]string{
 		"auto":      chatSystem("auto", "/data", "/data"),
 		"pentest":   chatSystem("pentest", "/data", "/data"),
@@ -141,7 +141,7 @@ func TestTaskRequestGuidanceSurvivesSavedPrompts(t *testing.T) {
 		"worker":    workerSystem("", "", "/data", "/data"),
 		"mainagent": mainAgentSystem("test app", "/data", "/data"),
 	} {
-		if !strings.HasPrefix(prompt, "保存的自定义正文") || strings.Count(prompt, taskRequestGuidance) != 1 {
+		if !strings.HasPrefix(prompt, "saved custom body") || strings.Count(prompt, taskRequestGuidance) != 1 {
 			t.Fatalf("%s lost prompt body or request guidance", role)
 		}
 	}

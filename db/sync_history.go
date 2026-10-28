@@ -126,7 +126,7 @@ func (d *DB) AddSyncFetched(ctx context.Context, id int64, count int) error {
 func (d *DB) RecoverSyncRuns(ctx context.Context) (int64, error) {
 	res, err := d.ExecContext(ctx, `UPDATE sync_runs SET status='interrupted',finished_at=now(),
 result=jsonb_set(result || '{"status":"interrupted"}'::jsonb,'{errors}',
-COALESCE(result->'errors','[]'::jsonb) || jsonb_build_array('同步进程已退出；已提交记录保留，本轮未完成'))
+COALESCE(result->'errors','[]'::jsonb) || jsonb_build_array('Sync process exited; committed records are kept, this round is incomplete'))
 WHERE status='running'`)
 	if err != nil {
 		return 0, err

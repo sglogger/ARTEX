@@ -95,7 +95,7 @@ func (e *Engine) requestCompletion(ctx context.Context, t *Task, reason string, 
 
 func (e *Engine) completeTask(ctx context.Context, t *Task, run *completionRun) {
 	committed, forced, joined := false, false, false
-	reason := "收官被取消，保留证据并重新复核"
+	reason := "completion was cancelled; evidence kept for another review"
 	failureKind := ""
 	var goalGaps []db.CompletionGoalGap
 	defer func() {
@@ -120,7 +120,7 @@ func (e *Engine) completeTask(ctx context.Context, t *Task, run *completionRun) 
 				if err == nil {
 					break
 				}
-				log.Printf("[completion] task %s 保存中断状态失败: %v", t.ID, err)
+				log.Printf("[completion] task %s failed to save interrupted state: %v", t.ID, err)
 				if run.root.Err() != nil || sleepCtx(run.root, time.Second) {
 					break
 				}
@@ -152,7 +152,7 @@ func (e *Engine) completeTask(ctx context.Context, t *Task, run *completionRun) 
 		}
 	}()
 
-	e.emitActivity(t, db.Activity{Worker: "system", Kind: "text", Summary: "正在收官：停止领取新意图，等待当前工作保存结果并退出"})
+	e.emitActivity(t, db.Activity{Worker: "system", Kind: "text", Summary: "Completing: no longer claiming new intents, waiting for current work to save results and exit"})
 	// Cancellation requests do not prove quiescence. Even after a forced stop,
 	// wait for actual completion of Execute and its final state/output writes.
 	for e.inflightCount(t.ID) > 1 {
@@ -194,12 +194,12 @@ func (e *Engine) completeTask(ctx context.Context, t *Task, run *completionRun) 
 	}
 	joined = true
 	if run.stalled.Load() {
-		reason = "先前未退出的执行现已结束；任务保持暂停，请检查保存结果后继续"
+		reason = "the execution that had not exited has now finished; the task stays paused, check the saved results before continuing"
 		failureKind = "drain"
 		return
 	}
 	if forced && !run.timedOut {
-		reason = "工作未能在收尾期限内正常退出；保留结果并重新规划"
+		reason = "work did not exit normally within the wrap-up deadline; results kept and replanning"
 		failureKind = "drain"
 		return
 	}
@@ -226,7 +226,7 @@ func (e *Engine) completeTask(ctx context.Context, t *Task, run *completionRun) 
 	defer cancelReview()
 	current, err := e.m.pg.ReviewTaskCompletion(reviewCtx, run.attempt.TaskID, run.attempt.AttemptID, db.CompletionReviewPolicy{Budget: options.Duration, Profile: profile})
 	if err != nil {
-		reason = fmt.Sprintf("收官快照已变化，需要重新规划：%v", err)
+		reason = fmt.Sprintf("completion snapshot changed, replanning required: %v", err)
 		failureKind = "snapshot"
 		return
 	}
@@ -237,12 +237,12 @@ func (e *Engine) completeTask(ctx context.Context, t *Task, run *completionRun) 
 	}
 	met := false
 	if planner == nil {
-		reason = "终验模型尚未就绪，不能确认完成"
+		reason = "final verification model is not ready; cannot confirm completion"
 		failureKind = "configuration"
 	} else if run.timedOut && e.IsPaused(t.ID) {
-		reason = "任务在暂停期间到达绝对截止时间，未进行完成终验"
+		reason = "the task reached its absolute deadline while paused; no final completion verification was run"
 	} else {
-		e.emitActivity(t, db.Activity{Worker: "planner", Kind: "round", Summary: fmt.Sprintf("收官只读终验（第 %d 轮）", e.nextPlannerRound(t.ID))})
+		e.emitActivity(t, db.Activity{Worker: "planner", Kind: "round", Summary: fmt.Sprintf("Read-only final completion verification (round %d)", e.nextPlannerRound(t.ID))})
 		e.BeginLLMCall(t.ID)
 		var verdict db.CompletionReviewVerdict
 		verdict, err = planner.ReviewCompletionVerdict(reviewCtx, run.attempt.TaskID, t.Store, current.Snapshot, func(a db.Activity) { e.emitActivity(t, a) })
@@ -250,17 +250,17 @@ func (e *Engine) completeTask(ctx context.Context, t *Task, run *completionRun) 
 		e.EndLLMCall(t.ID)
 		if err != nil {
 			met = false
-			reason = fmt.Sprintf("收官终验失败：%v", err)
+			reason = fmt.Sprintf("final completion verification failed: %v", err)
 			failureKind = completionFailureKind(err)
 		} else if !met {
 			failureKind = "evidence"
-			if reason == "终验没有提交明确结论" {
+			if reason == "final verification submitted no clear verdict" {
 				failureKind = "no_verdict"
 			}
 		}
 		if planner.CompletionReviewSignature() != profile {
 			met = false
-			reason = "终验期间模型或预算配置已变化，需要重新复核"
+			reason = "model or budget config changed during final verification; another review is required"
 			failureKind = "configuration"
 		}
 		if ctx.Err() != nil {
@@ -286,14 +286,14 @@ func (e *Engine) completeTask(ctx context.Context, t *Task, run *completionRun) 
 	e.m.taskStateMu.Lock()
 	defer e.m.taskStateMu.Unlock()
 	if err := e.m.pg.FinishTaskCompletion(ctx, current.TaskID, current.AttemptID, current.InputDigest, status, reason); err != nil {
-		reason = fmt.Sprintf("提交前数据或生命周期已变化，旧终验失效：%v", err)
+		reason = fmt.Sprintf("data or lifecycle changed before commit; the previous final verification is invalid: %v", err)
 		failureKind = "snapshot"
 		return
 	}
 	t.updateLifecycle(func(state *taskLifecycleState) { state.Status = status; state.CompletedAt = time.Now().Unix() })
 	committed = true
 	run.committed.Store(true)
-	e.emitActivity(t, db.Activity{Worker: "system", Kind: "text", Summary: "收官完成：" + status, Detail: reason})
+	e.emitActivity(t, db.Activity{Worker: "system", Kind: "text", Summary: "Completion finished: " + status, Detail: reason})
 }
 
 func completionFailureKind(err error) string {
@@ -343,10 +343,10 @@ func (e *Engine) retryCompletion(ctx context.Context, t *Task) {
 			decisions = append(decisions, decision)
 		}
 	}
-	if err := e.requestCompletion(ctx, t, "按持久化退避计划重新复核", decisions, false); err != nil {
+	if err := e.requestCompletion(ctx, t, "re-reviewing per the persisted backoff plan", decisions, false); err != nil {
 		var limited *db.CompletionRetryError
 		if !errors.As(err, &limited) && !errors.Is(err, db.ErrCompletionChanged) {
-			e.completionReplan.Store(t.ID, "重试时输入变化，需要检查剩余工作："+err.Error())
+			e.completionReplan.Store(t.ID, "inputs changed on retry, remaining work needs checking: "+err.Error())
 			t.Notify()
 		}
 	}
@@ -356,19 +356,19 @@ func (e *Engine) quarantineCompletion(t *Task, run *completionRun) {
 	if !run.stalled.CompareAndSwap(false, true) {
 		return
 	}
-	reason := "收官失败：旧执行未在取消后退出，任务已隔离并暂停；等待其真实退出前禁止继续，已有结果可能仍在保存"
+	reason := "completion failed: the previous execution did not exit after cancellation; the task is isolated and paused. Continuing is blocked until it really exits, and existing results may still be saving"
 	e.completionMu.Lock()
 	e.paused.Store(t.ID, true)
 	run.cancel()
 	e.completionMu.Unlock()
 	e.cancelExec(t.ID, agent.AbortSettleDrainTimeout)
 	if err := e.m.ApplyTaskPause(t.ID); err != nil {
-		log.Printf("[completion] task %s 隔离暂停落库失败: %v", t.ID, err)
+		log.Printf("[completion] task %s failed to persist isolation pause: %v", t.ID, err)
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(run.root), 8*time.Second)
 	defer cancel()
 	if err := e.m.pg.InterruptTaskCompletion(ctx, run.attempt.TaskID, run.attempt.AttemptID, reason, false); err != nil {
-		log.Printf("[completion] task %s 隔离原因落库失败: %v", t.ID, err)
+		log.Printf("[completion] task %s failed to persist isolation reason: %v", t.ID, err)
 	}
 	e.emitActivity(t, db.Activity{Worker: "system", Kind: "text", Summary: reason})
 }
@@ -395,9 +395,9 @@ func (e *Engine) settleTask(ctx context.Context, t *Task) {
 			}
 			continue
 		}
-		err := e.requestCompletion(ctx, t, "任务到达绝对截止时间", nil, true)
+		err := e.requestCompletion(ctx, t, "task reached its absolute deadline", nil, true)
 		if err != nil && !errors.Is(err, db.ErrCompletionChanged) {
-			log.Printf("[completion] task %s 超时收官重试: %v", t.ID, err)
+			log.Printf("[completion] task %s timeout completion retry: %v", t.ID, err)
 		}
 		if err != nil && sleepCtx(ctx, time.Second) {
 			return

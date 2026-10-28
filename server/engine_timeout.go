@@ -9,18 +9,18 @@ import (
 	"github.com/Autumn-27/artex/agent"
 )
 
-// 任务级超时协调器(见 docs/任务级超时与收尾设计.md §4/§8.5)。
-// 绝对墙钟:每个带 timeout 的任务一个定时 goroutine,到点驱动有序收尾时序:
-//   ① settling → ② worker 停领新意图 / ③ planner 丢弃普通 notify
-//   ④ 等在跑 worker drain(受 grace) → ⑤ 终局一轮 planner 判定 → ⑥ 定终态(带守卫)
+// Task-level timeout coordinator (see the task-level timeout and wrap-up design doc §4/§8.5).
+// Absolute wall clock: one timer goroutine per task with a timeout, driving the ordered wrap-up sequence when due:
+//   ① settling → ② workers stop claiming new intents / ③ planner drops ordinary notifies
+//   ④ wait for running workers to drain (bounded by grace) → ⑤ final planner round decides → ⑥ set the terminal state (guarded)
 
 const (
-	settleDrainGrace     = 90 * time.Second // 等在跑 worker 优雅收尾的上限;超过则硬 cancel
-	deadlinePollInterval = 2 * time.Second  // deadline 未盖章/LLM 未就绪时的轮询间隔
-	deadlineMaxSleep     = 30 * time.Second // 单次最长睡眠(便于周期复查终态)
+	settleDrainGrace     = 90 * time.Second // cap on waiting for running workers to wrap up gracefully; hard cancel beyond it
+	deadlinePollInterval = 2 * time.Second  // poll interval while the deadline is unstamped/LLM not ready
+	deadlineMaxSleep     = 30 * time.Second // longest single sleep (so terminal states are rechecked periodically)
 )
 
-// ---------- settling 状态 ----------
+// ---------- settling state ----------
 
 func (e *Engine) isSettling(taskID string) bool {
 	v, _ := e.settling.Load(taskID)
@@ -34,7 +34,7 @@ func (e *Engine) markSettling(taskID string) bool {
 	return !loaded
 }
 
-// ---------- 在跑计数(worker.Execute + planner.Plan),用于 drain ----------
+// ---------- running count (worker.Execute + planner.Plan), used for drain ----------
 
 func (e *Engine) inflightCounter(taskID string) *int64 {
 	v, _ := e.inflight.LoadOrStore(taskID, new(int64))
@@ -99,13 +99,13 @@ func (e *Engine) stampFirstRun(t *Task) {
 	}
 	dl, err := e.m.StampTaskFirstRun(t.ID)
 	if err != nil {
-		log.Printf("[deadline] task %s 盖章 first_run 失败: %v", t.ID, err)
-		e.stamped.Delete(t.ID) // 允许下次重试
+		log.Printf("[deadline] task %s failed to stamp first_run: %v", t.ID, err)
+		e.stamped.Delete(t.ID) // allow a retry next time
 		return
 	}
 	if dl > 0 {
 		e.deadline.Store(t.ID, dl)
-		log.Printf("[deadline] task %s 首次运行,截止于 %s", t.ID, time.Unix(dl, 0).Format("2006-01-02 15:04:05"))
+		log.Printf("[deadline] task %s first run, deadline %s", t.ID, time.Unix(dl, 0).Format("2006-01-02 15:04:05"))
 	}
 }
 
@@ -120,7 +120,7 @@ func (e *Engine) clockCtx(base context.Context, t *Task, final bool) context.Con
 	return agent.WithTaskClock(base, agent.TaskClock{DeadlineUnix: dl, Final: final})
 }
 
-// ---------- 协调器 ----------
+// ---------- coordinator ----------
 
 // startDeadlineCoordinator launches the per-task deadline timer once (idempotent).
 // Called from Run() and from the restart reload path, so non-active timeout tasks

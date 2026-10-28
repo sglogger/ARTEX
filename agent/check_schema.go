@@ -12,10 +12,10 @@ func withCheckContractSchema(t actool.CoreTool) actool.CoreTool {
 	batch := ""
 	switch t.Name() {
 	case "set_goals":
-		additions = map[string]any{"goal_type": map[string]any{"type": "string", "enum": []string{"inspection", "outcome"}}, "required_checks": map[string]any{"type": "array", "items": str("必要对象、机制及完成条件")}}
+		additions = map[string]any{"goal_type": map[string]any{"type": "string", "enum": []string{"inspection", "outcome"}}, "required_checks": map[string]any{"type": "array", "items": str("required objects, mechanisms and completion conditions")}}
 		batch = "goals"
 	case "add_intent":
-		additions = map[string]any{"check": obj(map[string]any{"target": str("规范化目标/接口"), "mechanism": str("固定检查机制")}, "target", "mechanism"), "retry_of": idp("恢复的原意图"), "recovery_change": str("实际改变什么")}
+		additions = map[string]any{"check": obj(map[string]any{"target": str("normalized target/endpoint"), "mechanism": str("fixed check mechanism")}, "target", "mechanism"), "retry_of": idp("original intent being recovered"), "recovery_change": str("what actually changes")}
 		batch = "intents"
 	case "record_fact":
 		additions = map[string]any{"checkpoint": checkpointSchema()}
@@ -72,11 +72,11 @@ func withCheckContractSchema(t actool.CoreTool) actool.CoreTool {
 			itemSchema["required"] = required
 		}
 	}
-	note := "\n按固定目标/机制保存检查身份；恢复引用最新 retry_of 并说明 recovery_change。"
+	note := "\nSave the check identity by fixed target/mechanism; a recovery references the latest retry_of and explains recovery_change."
 	if t.Name() == "set_goals" {
-		note = "\n保存固定 goal_type 和 required_checks；inspection 可由完整阴性检查满足，outcome 必须有成果证据。"
+		note = "\nSave a fixed goal_type and required_checks; inspection can be satisfied by a complete negative check, outcome requires result evidence."
 	} else if t.Name() == "record_fact" {
-		note = "\ncheckpoint 必须如实记录覆盖、结果和缺口，续接保留原认证候选、预算和已验证身份。"
+		note = "\ncheckpoint must truthfully record coverage, results and gaps; resuming keeps the original authentication candidates, budget and verified identity."
 	}
 	return DecorateTool(t, t.Description()+note, schema)
 }
@@ -85,15 +85,15 @@ func checkpointSchema() map[string]any {
 	stringsSchema := map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
 	return obj(map[string]any{
 		"result": map[string]any{"type": "string", "enum": []string{"positive", "negative", "partial", "blocked"}},
-		"scope":  stringsSchema, "evidence": str("实际操作及可核查结果"), "gaps": stringsSchema,
-		"barrier": str("具体阻碍"), "next_action": str("恢复要改变什么"),
+		"scope":  stringsSchema, "evidence": str("the actual operation and verifiable result"), "gaps": stringsSchema,
+		"barrier": str("the specific obstacle"), "next_action": str("what recovery must change"),
 		"auth": obj(map[string]any{
-			"request": str("真实接口、method、Content-Type 和字段名；不含凭据"),
-			"budget":  intp("授权的总候选尝试次数"),
+			"request": str("real endpoint, method, Content-Type and field names; no credentials"),
+			"budget":  intp("total number of authorized candidate attempts"),
 			"candidates": map[string]any{"type": "array", "items": obj(map[string]any{
-				"id": str("固定候选引用，不含密码"), "state": map[string]any{"type": "string", "enum": []string{"remaining", "failed", "skipped", "verified"}}, "reason": str("跳过/停止原因"), "attempts": intp("实际发送请求次数，包括错误/限流中断；续接不得减少"),
+				"id": str("fixed candidate reference, no password"), "state": map[string]any{"type": "string", "enum": []string{"remaining", "failed", "skipped", "verified"}}, "reason": str("skip/stop reason"), "attempts": intp("number of requests actually sent, including those interrupted by errors/rate limiting; must not decrease on resume"),
 			}, "id", "state")},
-			"identity": str("已验证身份和权限"), "identity_evidence": str("认证后低影响读取及关键响应"), "stop_reason": str("限流/锁定等停止原因"),
+			"identity": str("verified identity and privileges"), "identity_evidence": str("post-authentication low-impact read and key response"), "stop_reason": str("stop reason such as rate limiting/lockout"),
 		}, "request", "budget", "candidates"),
 	}, "result", "scope", "evidence", "gaps")
 }

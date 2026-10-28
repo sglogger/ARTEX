@@ -18,14 +18,14 @@ type EngagementGoal struct {
 
 func (g EngagementGoal) Validate() error {
 	if strings.TrimSpace(g.Text) == "" || (g.GoalType != "inspection" && g.GoalType != "outcome") {
-		return fmt.Errorf("每个目标须保存 text 与固定 goal_type")
+		return fmt.Errorf("every goal must record text and a fixed goal_type")
 	}
 	if g.GoalType == "inspection" && len(g.RequiredChecks) == 0 {
-		return fmt.Errorf("检查目标须保存非空 required_checks")
+		return fmt.Errorf("a check goal must record non-empty required_checks")
 	}
 	for _, check := range g.RequiredChecks {
 		if strings.TrimSpace(check) == "" {
-			return fmt.Errorf("required_checks 不能包含空检查")
+			return fmt.Errorf("required_checks cannot contain empty checks")
 		}
 	}
 	return nil
@@ -46,7 +46,7 @@ type EngagementChange struct {
 // paused, quiescent execution; old goals/evidence remain in the change audit.
 func (d *DB) UpdateEngagement(ctx context.Context, taskID int64, change EngagementChange) error {
 	if strings.TrimSpace(change.Goal) == "" || strings.TrimSpace(change.Reason) == "" || len(change.Goals) == 0 {
-		return fmt.Errorf("goal、reason 和完整 goals 必填")
+		return fmt.Errorf("goal, reason and the complete goals are required")
 	}
 	for _, g := range change.Goals {
 		if err := g.Validate(); err != nil {
@@ -55,7 +55,7 @@ func (d *DB) UpdateEngagement(ctx context.Context, taskID int64, change Engageme
 	}
 	for _, c := range change.Constraints {
 		if c.Kind != "allow" && c.Kind != "deny" || strings.TrimSpace(c.Text) == "" {
-			return fmt.Errorf("无效 constraints")
+			return fmt.Errorf("invalid constraints")
 		}
 	}
 	return d.completionTransaction(ctx, taskID, func(tx *sql.Tx) error {
@@ -65,14 +65,14 @@ func (d *DB) UpdateEngagement(ctx context.Context, taskID int64, change Engageme
 			return err
 		}
 		if !paused {
-			return fmt.Errorf("先暂停并等待当前执行退出，再修改任务契约")
+			return fmt.Errorf("pause and wait for the current execution to exit before changing the task contract")
 		}
 		var running bool
 		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM exploration_nodes WHERE exploration_id=$1 AND kind='intent' AND state='running')`, expID).Scan(&running); err != nil {
 			return err
 		}
 		if running {
-			return fmt.Errorf("当前工作尚未退出，稍后重试")
+			return fmt.Errorf("current work has not exited yet; retry later")
 		}
 		var prior json.RawMessage
 		if err := tx.QueryRowContext(ctx, `SELECT jsonb_build_object('task',to_jsonb(t),'goals',(SELECT jsonb_agg(to_jsonb(n)) FROM exploration_nodes n WHERE exploration_id=$2 AND kind='goal'),'constraints',(SELECT jsonb_agg(to_jsonb(c)) FROM task_constraints c WHERE exploration_id=$2),'scopes',(SELECT jsonb_agg(to_jsonb(s)) FROM task_scope s WHERE task_id=$1)) FROM tasks t WHERE id=$1`, taskID, expID).Scan(&prior); err != nil {
@@ -189,7 +189,7 @@ func (s *AssetStore) EditManualTaskScope(ctx context.Context, taskID, deleteID i
 			return err
 		}
 		if !paused || running {
-			return fmt.Errorf("先暂停并等待当前执行退出，再修改范围")
+			return fmt.Errorf("pause and wait for the current execution to exit before changing the scope")
 		}
 		copy := *s
 		copy.tx = tx
@@ -212,7 +212,7 @@ func (s *AssetStore) EditManualTaskScope(ctx context.Context, taskID, deleteID i
 		// Target references also live in free-text intent payloads. Conservatively
 		// retire unfinished work and replan, rather than let a resumed old intent
 		// restore a removed target through the worker's AddAutoScope call.
-		editReason := "人工修改测试范围：" + reason
+		editReason := "Test scope changed manually: " + reason
 		if err := retireContractIntents(ctx, tx, expID, editReason); err != nil {
 			return err
 		}

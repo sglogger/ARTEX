@@ -11,7 +11,7 @@ import (
 // still requires independent review of the saved mechanism and observations.
 func ValidateGoalEvidence(snapshot GoalProofSnapshot) error {
 	if snapshot.Goal == nil || snapshot.Evidence == nil {
-		return fmt.Errorf("缺少目标或证据")
+		return fmt.Errorf("missing goal or evidence")
 	}
 	var goal struct {
 		Type    string `json:"goal_type"`
@@ -25,23 +25,23 @@ func ValidateGoalEvidence(snapshot GoalProofSnapshot) error {
 		return err
 	}
 	if goal.Pending {
-		return fmt.Errorf("目标拆解尚未确定检查或成果契约，请先明确目标类型及必要检查")
+		return fmt.Errorf("goal decomposition has not settled a check or outcome contract yet; specify the goal type and required checks first")
 	}
 	if err := json.Unmarshal(snapshot.Evidence.Payload, &evidence); err != nil {
 		return err
 	}
 	if evidence.Confidence == "inferred" {
-		return fmt.Errorf("推断事实不能独自证明目标达成")
+		return fmt.Errorf("an inferred fact alone cannot prove a goal is met")
 	}
 	if c := evidence.Checkpoint; c != nil {
 		if err := c.Validate(); err != nil {
 			return err
 		}
 		if c.Result == "partial" || c.Result == "blocked" {
-			return fmt.Errorf("检查尚有缺口，不能证明目标已完成")
+			return fmt.Errorf("the check still has gaps and cannot prove the goal is complete")
 		}
 		if goal.Type == "outcome" && c.Result != "positive" {
-			return fmt.Errorf("阴性检查不能满足成果目标")
+			return fmt.Errorf("a negative check cannot satisfy an outcome goal")
 		}
 	}
 	var findings []struct {
@@ -55,10 +55,10 @@ func ValidateGoalEvidence(snapshot GoalProofSnapshot) error {
 	}
 	for _, f := range findings {
 		if strings.TrimSpace(f.Evidence) == "" {
-			return fmt.Errorf("发现缺少可核查 evidence；保留线索并补证，不能计为已验证成果")
+			return fmt.Errorf("the finding lacks verifiable evidence; keep the lead and add evidence, it cannot count as a verified outcome")
 		}
 		if f.Status == FindingFalsePositive || f.Status == FindingIgnored || f.Status == FindingDuplicate {
-			return fmt.Errorf("发现当前处置状态不支持独立成果")
+			return fmt.Errorf("the finding's current triage status does not support an independent outcome")
 		}
 	}
 	return nil

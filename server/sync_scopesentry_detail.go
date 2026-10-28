@@ -17,14 +17,14 @@ func ssWithDetail(ctx context.Context, cl ssToolCaller, raw json.RawMessage) jso
 	var detail json.RawMessage
 	var err error
 	if id == "" {
-		err = fmt.Errorf("源记录缺少资产 ID，无法获取详情")
+		err = fmt.Errorf("source record has no asset ID; cannot fetch details")
 	} else {
 		var text string
 		text, err = cl.Call(ctx, "get_asset_detail", map[string]any{"asset_type": "asset", "id": id})
 		if err == nil {
 			var object map[string]json.RawMessage
 			if json.Unmarshal([]byte(text), &object) != nil || len(object) == 0 {
-				err = fmt.Errorf("资产详情不是有效对象")
+				err = fmt.Errorf("asset details are not a valid object")
 			} else {
 				detail = json.RawMessage(text)
 			}

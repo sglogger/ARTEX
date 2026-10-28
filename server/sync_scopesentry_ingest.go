@@ -27,10 +27,10 @@ func ssPrepareItem(assetType string, raw json.RawMessage) (ssPreparedItem, error
 			IP    []string `json:"ip"`
 		}
 		if err := json.Unmarshal(raw, &it); err != nil {
-			return ssPreparedItem{}, fmt.Errorf("subdomain 解析失败: %w", err)
+			return ssPreparedItem{}, fmt.Errorf("failed to parse subdomain: %w", err)
 		}
 		if strings.TrimSpace(it.Host) == "" {
-			return ssPreparedItem{skipReason: "subdomain 缺少 host，未入库"}, nil
+			return ssPreparedItem{skipReason: "subdomain has no host; not stored"}, nil
 		}
 		return ssPreparedItem{apply: func(as *db.AssetStore, item *db.SyncObservation) error {
 			id, err := as.UpsertSubdomain(db.UpsertSubdomainReq{Domain: it.Host, RecordType: it.Type, RecordValue: it.Value})
@@ -44,7 +44,7 @@ func ssPrepareItem(assetType string, raw json.RawMessage) (ssPreparedItem, error
 				}
 				if _, err := as.UpsertIP(db.UpsertIPReq{IP: ip, BoundDomains: []string{it.Host}}); err != nil {
 					item.DerivedIPFailed++
-					return fmt.Errorf("subdomain %s 关联 IP %s 入库失败，本条已回滚: %w", it.Host, ip, err)
+					return fmt.Errorf("failed to store IP %s linked to subdomain %s; this item was rolled back: %w", ip, it.Host, err)
 				}
 				item.DerivedIPWritten++
 			}
@@ -59,10 +59,10 @@ func ssPrepareItem(assetType string, raw json.RawMessage) (ssPreparedItem, error
 			BundleID    string `json:"bundle_id"`
 		}
 		if err := json.Unmarshal(raw, &it); err != nil {
-			return ssPreparedItem{}, fmt.Errorf("app 解析失败: %w", err)
+			return ssPreparedItem{}, fmt.Errorf("failed to parse app: %w", err)
 		}
 		if strings.TrimSpace(it.Name) == "" {
-			return ssPreparedItem{skipReason: "app 缺少 name，未入库"}, nil
+			return ssPreparedItem{skipReason: "app has no name; not stored"}, nil
 		}
 		return ssPreparedItem{apply: func(as *db.AssetStore, item *db.SyncObservation) error {
 			id, err := as.UpsertApp(db.UpsertAppReq{Name: it.Name, BundleID: it.BundleID, Category: it.Category, Description: it.Description, ICP: it.ICP})
@@ -90,7 +90,7 @@ func ssPrepareItem(assetType string, raw json.RawMessage) (ssPreparedItem, error
 			ContentLength *int64          `json:"contentlength"`
 		}
 		if err := json.Unmarshal(raw, &it); err != nil {
-			return ssPreparedItem{}, fmt.Errorf("service 解析失败: %w", err)
+			return ssPreparedItem{}, fmt.Errorf("failed to parse service: %w", err)
 		}
 		if it.Domain == "" {
 			it.Domain = it.Host
@@ -108,7 +108,7 @@ func ssPrepareItem(assetType string, raw json.RawMessage) (ssPreparedItem, error
 		}
 		if it.Service == "http" || it.Service == "https" || it.URL != "" {
 			if strings.TrimSpace(it.URL) == "" {
-				return ssPreparedItem{skipReason: "HTTP service 缺少 url，未入库"}, nil
+				return ssPreparedItem{skipReason: "HTTP service has no url; not stored"}, nil
 			}
 			return ssPreparedItem{apply: func(as *db.AssetStore, item *db.SyncObservation) error {
 				id, err := as.UpsertHTTPService(db.UpsertHTTPServiceReq{
@@ -124,7 +124,7 @@ func ssPrepareItem(assetType string, raw json.RawMessage) (ssPreparedItem, error
 			}}, nil
 		}
 		if strings.TrimSpace(it.Domain) == "" && strings.TrimSpace(it.IP) == "" {
-			return ssPreparedItem{skipReason: "service 缺少 domain 和 ip，未入库"}, nil
+			return ssPreparedItem{skipReason: "service has no domain or ip; not stored"}, nil
 		}
 		port, err := ssPort(it.Port)
 		if err != nil {
@@ -141,7 +141,7 @@ func ssPrepareItem(assetType string, raw json.RawMessage) (ssPreparedItem, error
 			return nil
 		}}, nil
 	default:
-		return ssPreparedItem{}, fmt.Errorf("未知资产类型: %s", assetType)
+		return ssPreparedItem{}, fmt.Errorf("unknown asset type: %s", assetType)
 	}
 }
 
@@ -149,12 +149,12 @@ func ssPort(raw json.RawMessage) (int, error) {
 	text := string(raw)
 	if len(raw) > 0 && raw[0] == '"' {
 		if err := json.Unmarshal(raw, &text); err != nil {
-			return 0, fmt.Errorf("service port 解析失败: %w", err)
+			return 0, fmt.Errorf("failed to parse service port: %w", err)
 		}
 	}
 	port, err := strconv.Atoi(text)
 	if err != nil || port < 1 || port > 65535 {
-		return 0, fmt.Errorf("service port 必须是 1 至 65535 的整数，收到 %q", text)
+		return 0, fmt.Errorf("service port must be an integer from 1 to 65535, got %q", text)
 	}
 	return port, nil
 }

@@ -28,28 +28,28 @@ export function GoalCorrection({
       setEditing(false);
       await onChanged();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "目标纠错失败");
+      setError(e instanceof Error ? e.message : "Goal correction failed");
     } finally {
       setBusy(false);
     }
   };
   const labels: Record<string, string> = {
-    prove: "证据审核通过",
-    reject: "证据不足",
-    reopen: "原判定已纠正",
-    edit: "目标已修改",
+    prove: "Evidence approved",
+    reject: "Insufficient evidence",
+    reopen: "Original verdict corrected",
+    edit: "Goal edited",
   };
   return (
     <div className="space-y-1">
       {!!goal.audit?.length && (
         <details className="text-xs text-muted-foreground">
-          <summary className="cursor-pointer">证据与纠错记录（{goal.audit.length}）</summary>
+          <summary className="cursor-pointer">Evidence and correction log ({goal.audit.length})</summary>
           <ul className="max-w-xl space-y-1 whitespace-pre-wrap break-words">
             {goal.audit.map((entry, index) => (
               <li key={`${entry.at}-${index}`}>
-                {new Date(entry.at).toLocaleString()} · {labels[entry.event] ?? entry.event} · {entry.actor}：
+                {new Date(entry.at).toLocaleString()} · {labels[entry.event] ?? entry.event} · {entry.actor}:
                 {entry.reason}
-                {entry.evidence_id ? `（证据 #${entry.evidence_id}）` : ""}
+                {entry.evidence_id ? ` (evidence #${entry.evidence_id})` : ""}
               </li>
             ))}
           </ul>
@@ -57,7 +57,7 @@ export function GoalCorrection({
       )}
       {goal.state === "met" && !editing && (
         <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
-          纠正完成判定
+          Correct completion verdict
         </Button>
       )}
       {editing && (
@@ -66,14 +66,14 @@ export function GoalCorrection({
             className="h-8 min-w-48"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            placeholder="说明原证据缺少什么成果或必要检查"
+            placeholder="Explain which result or required check the original evidence lacks"
             disabled={busy}
           />
           <Button size="sm" disabled={busy || !reason.trim()} onClick={() => void reopen()}>
-            {busy ? "正在保存…" : "恢复为待完成"}
+            {busy ? "Saving…" : "Revert to pending"}
           </Button>
           <Button variant="ghost" size="sm" disabled={busy} onClick={() => setEditing(false)}>
-            取消
+            Cancel
           </Button>
         </div>
       )}

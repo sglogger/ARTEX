@@ -15,7 +15,7 @@ func (s *Server) updateEngagement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.engine.beginTaskOperation(t.ID) {
-		writeErr(w, 409, "任务正在删除")
+		writeErr(w, 409, "task is being deleted")
 		return
 	}
 	defer s.engine.decInflight(t.ID)
@@ -27,7 +27,7 @@ func (s *Server) updateEngagement(w http.ResponseWriter, r *http.Request) {
 	s.concMu.Lock()
 	defer s.concMu.Unlock()
 	if !evidenceEditQuiescent(s, t) {
-		writeErr(w, 409, "请先暂停任务并等待工作退出，再更新范围、目标和约束")
+		writeErr(w, 409, "pause the task and wait for work to exit before updating the scope, goals and constraints")
 		return
 	}
 	id, _ := strconv.ParseInt(t.ID, 10, 64)
@@ -36,8 +36,8 @@ func (s *Server) updateEngagement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t.setContract(change.Goal, change.Description)
-	t.NotifyGoalEdited("任务契约", change.Reason)
-	writeJSON(w, 200, map[string]any{"ok": true, "paused": true, "note": "目标、约束与范围已同步保存；保留旧契约审计，恢复后按新契约执行与复核。"})
+	t.NotifyGoalEdited("task contract", change.Reason)
+	writeJSON(w, 200, map[string]any{"ok": true, "paused": true, "note": "Goals, constraints and scope saved together; the old contract audit is kept, and after resuming execution and review follow the new contract."})
 }
 
 func evidenceEditQuiescent(s *Server, t *Task) bool {

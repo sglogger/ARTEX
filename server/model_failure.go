@@ -37,7 +37,7 @@ func modelFailure(err error) modelFailureInfo {
 	var httpError *llm.HTTPError
 	if errors.As(err, &httpError) {
 		body := strings.ToLower(httpError.Body)
-		if strings.Contains(body, "content_policy_violation") || strings.Contains(body, "sensitive words") || strings.Contains(body, "敏感词") {
+		if strings.Contains(body, "content_policy_violation") || strings.Contains(body, "sensitive words") || strings.Contains(body, "敏感词") { // the last one is "sensitive words" as returned by Chinese providers
 			return modelFailureInfo{Kind: "refusal", Action: "review_provider_policy"}
 		}
 		switch httpError.StatusCode {
@@ -70,6 +70,6 @@ func (e *Engine) pauseForReview(t *Task, reason string) {
 	if err := e.m.SetTaskPaused(t.ID, true); err != nil {
 		return
 	}
-	e.Pause(t.ID, agent.Causef("run_needs_review", "本次运行需要复核", "%s；已保存成果和检查点，目标仍保留未完成状态", reason))
-	e.emitActivity(t, db.Activity{Worker: "system", Kind: "text", Summary: "本次运行已暂停，保留成果与缺口待复核", Detail: reason})
+	e.Pause(t.ID, agent.Causef("run_needs_review", "This run needs review", "%s; results and checkpoints are saved, and the goals remain unfinished", reason))
+	e.emitActivity(t, db.Activity{Worker: "system", Kind: "text", Summary: "This run is paused; results and gaps kept for review", Detail: reason})
 }

@@ -22,7 +22,7 @@ type CompletionRetryError struct {
 }
 
 func (e *CompletionRetryError) Error() string {
-	return fmt.Sprintf("收官复核受限：%s，累计失败 %d 次；恢复动作：%s", e.Kind, e.Count, e.Action)
+	return fmt.Sprintf("completion review limited: %s, %d failures so far; recovery action: %s", e.Kind, e.Count, e.Action)
 }
 
 func (d *DB) TaskCompletionRetryDue(ctx context.Context, taskID int64) (bool, error) {
@@ -153,7 +153,7 @@ func (d *DB) RecordTaskCompletionFailure(ctx context.Context, taskID, attemptID 
 
 func (d *DB) ResetTaskCompletionFailure(ctx context.Context, taskID, attemptID int64, actor, reason string) error {
 	if strings.TrimSpace(reason) == "" || strings.TrimSpace(actor) == "" {
-		return fmt.Errorf("恢复必须有操作者和原因")
+		return fmt.Errorf("a recovery needs an operator and a reason")
 	}
 	return d.completionTransaction(ctx, taskID, func(tx *sql.Tx) error {
 		c, err := scanCompletion(tx.QueryRowContext(ctx, `SELECT `+completionColumns+` FROM task_completions WHERE task_id=$1 AND attempt_id=$2 AND phase='interrupted'`, taskID, attemptID))

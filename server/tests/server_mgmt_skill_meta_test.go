@@ -158,7 +158,7 @@ func TestSkillMetaRejectsMalformedFrontmatter(t *testing.T) {
 		{
 			name: "ScopeSentry markdown inside header",
 			raw: "---\n\n## name: scopesentry-mcp\ndescription: ScopeSentry\n\n" +
-				"# ScopeSentry MCP 使用指南\n\n面向已部署的实例。\n\n---\n\n## Tools\n",
+				"# ScopeSentry MCP Usage Guide\n\nFor deployed instances.\n\n---\n\n## Tools\n",
 		},
 	}
 	for _, tt := range tests {
@@ -197,7 +197,7 @@ func TestBundledScopeSentryMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	sk, ok := reg.Get("scopesentry")
-	if !ok || sk.Description == "" || !strings.HasPrefix(sk.Instructions, "# ScopeSentry MCP 使用指南") {
+	if !ok || sk.Description == "" || !strings.HasPrefix(sk.Instructions, "# ScopeSentry MCP Usage Guide") {
 		t.Fatalf("bundled ScopeSentry metadata did not load: name=%q description=%q", sk.Name, sk.Description)
 	}
 }

@@ -40,7 +40,7 @@ func (s *Server) syncSSHistory(w http.ResponseWriter, r *http.Request) {
 	page, size := syncHistoryPagination(r)
 	runs, total, err := pg.ListSyncRuns(r.Context(), size, (page-1)*size)
 	if err != nil {
-		writeErr(w, 500, "读取同步历史失败: "+err.Error())
+		writeErr(w, 500, "failed to read sync history: "+err.Error())
 		return
 	}
 	for _, run := range runs {
@@ -56,16 +56,16 @@ func (s *Server) syncSSHistoryDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	id, ok := pathInt(r, "id")
 	if !ok || id <= 0 {
-		writeErr(w, 400, "无效的同步历史编号")
+		writeErr(w, 400, "invalid sync history id")
 		return
 	}
 	run, err := pg.GetSyncRun(r.Context(), id)
 	if err != nil {
-		writeErr(w, 500, "读取同步历史失败: "+err.Error())
+		writeErr(w, 500, "failed to read sync history: "+err.Error())
 		return
 	}
 	if run == nil {
-		writeErr(w, 404, "同步历史不存在")
+		writeErr(w, 404, "sync history not found")
 		return
 	}
 	page, size := syncHistoryPagination(r)
@@ -75,7 +75,7 @@ func (s *Server) syncSSHistoryDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	items, total, err := pg.ListSyncObservations(r.Context(), id, size, (page-1)*size, includeRaw)
 	if err != nil {
-		writeErr(w, 500, "读取同步明细失败: "+err.Error())
+		writeErr(w, 500, "failed to read sync details: "+err.Error())
 		return
 	}
 	normalizeSSHistoryResult(run)

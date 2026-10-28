@@ -48,7 +48,7 @@ func (s *Server) retrySSItems(ctx context.Context, req ssSyncReq, result *ssSync
 			}
 			item.ID, item.RunID = 0, result.RunID
 			if len(item.Raw) == 0 {
-				item.Status, item.Reason = "failed", "原记录未保留完整 JSON，请重新同步源范围"
+				item.Status, item.Reason = "failed", "the original record did not keep the full JSON; please resync the source scope"
 				err = s.m.pg.RecordSyncObservation(ctx, item)
 			} else {
 				err = s.storeSSItem(ctx, item)

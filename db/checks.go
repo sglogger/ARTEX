@@ -70,38 +70,38 @@ type Checkpoint struct {
 
 func (c Checkpoint) Validate() error {
 	if len(c.Scope) == 0 || strings.TrimSpace(c.Evidence) == "" {
-		return fmt.Errorf("检查结果必须保存实际 scope 和 evidence")
+		return fmt.Errorf("a check result must record the actual scope and evidence")
 	}
 	switch c.Result {
 	case "positive", "negative":
 		if len(c.Gaps) > 0 {
-			return fmt.Errorf("存在 gaps 的检查只能保存为 partial/blocked")
+			return fmt.Errorf("a check with gaps can only be saved as partial/blocked")
 		}
 	case "partial", "blocked":
 		if len(c.Gaps) == 0 {
-			return fmt.Errorf("partial/blocked 必须说明 gaps")
+			return fmt.Errorf("partial/blocked must describe the gaps")
 		}
 	default:
-		return fmt.Errorf("result 必须为 positive/negative/partial/blocked")
+		return fmt.Errorf("result must be positive/negative/partial/blocked")
 	}
 	if c.Result == "blocked" && strings.TrimSpace(c.Barrier) == "" {
-		return fmt.Errorf("blocked 必须说明 barrier")
+		return fmt.Errorf("blocked must describe the barrier")
 	}
 	if c.Auth == nil {
 		return nil
 	}
 	a := c.Auth
 	if strings.TrimSpace(a.Request) == "" || a.Budget <= 0 || len(a.Candidates) == 0 {
-		return fmt.Errorf("认证检查必须保存请求规范、授权预算与候选引用")
+		return fmt.Errorf("an authentication check must record the request spec, authorized budget and candidate refs")
 	}
 	seen, attempted, verified := map[string]bool{}, 0, 0
 	for _, candidate := range a.Candidates {
 		if candidate.ID == "" || seen[candidate.ID] {
-			return fmt.Errorf("候选引用必须非空且唯一")
+			return fmt.Errorf("candidate refs must be non-empty and unique")
 		}
 		seen[candidate.ID] = true
 		if candidate.Attempts < 0 {
-			return fmt.Errorf("候选实际请求次数不能为负")
+			return fmt.Errorf("actual candidate request count cannot be negative")
 		}
 		attempted += candidate.requestAttempts()
 		switch candidate.State {
@@ -109,24 +109,24 @@ func (c Checkpoint) Validate() error {
 		case "verified":
 			verified++
 			if a.Identity == "" || a.IdentityEvidence == "" {
-				return fmt.Errorf("认证成功必须保存认证后读取的身份及证据，HTTP 200 不充分")
+				return fmt.Errorf("a successful authentication must record the identity read after login and its evidence; HTTP 200 is not enough")
 			}
 		case "remaining", "skipped":
 			if c.Result == "negative" {
-				return fmt.Errorf("尚未执行全部候选，不能保存认证检查阴性完成")
+				return fmt.Errorf("not all candidates have been executed, cannot save the authentication check as negative and complete")
 			}
 			if candidate.State == "skipped" && candidate.Reason == "" {
-				return fmt.Errorf("跳过候选必须保存原因")
+				return fmt.Errorf("a skipped candidate must record a reason")
 			}
 		default:
-			return fmt.Errorf("无效候选状态")
+			return fmt.Errorf("invalid candidate status")
 		}
 	}
 	if attempted > a.Budget {
-		return fmt.Errorf("实际候选尝试超过授权预算")
+		return fmt.Errorf("actual candidate attempts exceed the authorized budget")
 	}
 	if c.Result == "positive" && verified == 0 {
-		return fmt.Errorf("认证阳性结果必须有 verified 候选及身份读取")
+		return fmt.Errorf("a positive authentication result needs a verified candidate and an identity read")
 	}
 	return nil
 }
@@ -151,16 +151,16 @@ func (s *ExplorationStore) AddCheckIntent(ctx context.Context, payload map[strin
 				return err
 			}
 			if saved.Retired {
-				return fmt.Errorf("原检查属于已替换契约，请按新范围重新规划")
+				return fmt.Errorf("the original check belongs to a superseded contract; replan against the new scope")
 			}
 			if state != "blocked" && state != "exhausted" && state != "stopped" {
-				return fmt.Errorf("只能恢复已经受阻或耗尽的工作")
+				return fmt.Errorf("only blocked or exhausted work can be resumed")
 			}
 			if saved.Check.Target == "" {
-				return fmt.Errorf("旧工作没有稳定检查身份，请先明确 target/mechanism")
+				return fmt.Errorf("the old work has no stable check identity; specify target/mechanism first")
 			}
 			if check.Target != "" && check.Key() != saved.Check.Key() {
-				return fmt.Errorf("恢复不得更换原检查身份")
+				return fmt.Errorf("a resume must not change the original check identity")
 			}
 			check = saved.Check
 			var latestID int64
@@ -168,30 +168,30 @@ func (s *ExplorationStore) AddCheckIntent(ctx context.Context, payload map[strin
 				return err
 			}
 			if retryOf != latestID {
-				return fmt.Errorf("恢复须引用最新检查尝试 #%d，避免丢失已执行覆盖", latestID)
+				return fmt.Errorf("a resume must reference the latest check attempt #%d so executed coverage is not lost", latestID)
 			}
 			if saved.Checkpoint != nil {
 				payload["checkpoint"] = saved.Checkpoint
 			}
 		}
 		if strings.TrimSpace(check.Target) == "" || strings.TrimSpace(check.Mechanism) == "" {
-			return fmt.Errorf("check.target 和 check.mechanism 必填")
+			return fmt.Errorf("check.target and check.mechanism are required")
 		}
 		var attempts, active int
 		if err := tx.QueryRowContext(ctx, `SELECT count(*),count(*) FILTER (WHERE state IN ('open','running','paused')) FROM exploration_nodes WHERE exploration_id=$1 AND kind='intent' AND payload->>'check_key'=$2 AND COALESCE(payload->>'retired_contract','false')<>'true'`, s.expID, check.Key()).Scan(&attempts, &active); err != nil {
 			return err
 		}
 		if active > 0 {
-			return fmt.Errorf("此检查已有未退出工作，请续接原工作")
+			return fmt.Errorf("this check already has unfinished work; continue the original work")
 		}
 		if attempts >= MaxCheckAttempts {
-			return fmt.Errorf("同一检查已达 %d 次上限；保留缺口，等待用户或新条件", MaxCheckAttempts)
+			return fmt.Errorf("this check has reached the limit of %d attempts; keep the gap and wait for the user or new conditions", MaxCheckAttempts)
 		}
 		if attempts > 0 && strings.TrimSpace(change) == "" {
-			return fmt.Errorf("恢复必须说明 recovery_change：本次实际改变什么")
+			return fmt.Errorf("a resume must state recovery_change: what this attempt actually changes")
 		}
 		if attempts > 0 && retryOf == 0 {
-			return fmt.Errorf("已有原检查；恢复须提供 retry_of 并继承实际覆盖检查点")
+			return fmt.Errorf("an original check already exists; a resume must provide retry_of and inherit the actual coverage checkpoint")
 		}
 		payload["check"], payload["check_key"], payload["check_attempt"] = check, check.Key(), attempts+1
 		if retryOf > 0 {
@@ -232,23 +232,23 @@ func (s *ExplorationStore) RecordCheckFact(ctx context.Context, payload map[stri
 		var old Checkpoint
 		if len(prior) > 0 && json.Unmarshal(prior, &old) == nil && old.Auth != nil {
 			if checkpoint.Auth == nil {
-				return fmt.Errorf("认证检查点须保留原候选、预算与身份记录")
+				return fmt.Errorf("an authentication checkpoint must keep the original candidates, budget and identity record")
 			}
 			current := map[string]AuthCandidate{}
 			for _, c := range checkpoint.Auth.Candidates {
 				current[c.ID] = c
 			}
 			if len(current) != len(old.Auth.Candidates) || checkpoint.Auth.Request != old.Auth.Request {
-				return fmt.Errorf("续接不能更改授权候选集合或请求规范")
+				return fmt.Errorf("a continuation cannot change the authorized candidate set or request spec")
 			}
 			for _, c := range old.Auth.Candidates {
 				next, ok := current[c.ID]
 				if !ok || next.requestAttempts() < c.requestAttempts() || ((c.State == "failed" || c.State == "verified") && next.State != c.State) {
-					return fmt.Errorf("认证检查点不能丢失或重置已执行候选")
+					return fmt.Errorf("an authentication checkpoint cannot lose or reset executed candidates")
 				}
 			}
 			if checkpoint.Auth.Budget != old.Auth.Budget {
-				return fmt.Errorf("续接不能更改原授权尝试预算")
+				return fmt.Errorf("a continuation cannot change the original authorized attempt budget")
 			}
 		}
 		payload["checkpoint"] = checkpoint
@@ -277,7 +277,7 @@ func (s *ExplorationStore) RecordCheckFact(ctx context.Context, payload map[stri
 // FinalizeIntentResult distinguishes the worker's exit from a completed check.
 func (s *ExplorationStore) FinalizeIntentResult(id int64, state, kind, action string) error {
 	if state != "done" && state != "blocked" && state != "exhausted" && state != "stopped" {
-		return fmt.Errorf("无效的工作退出状态")
+		return fmt.Errorf("invalid work exit status")
 	}
 	_, err := s.db.Exec(`WITH result AS (SELECT id,CASE WHEN $3='done' AND payload ? 'check_key' AND COALESCE(payload->'checkpoint'->>'result','') NOT IN ('positive','negative') THEN 'exhausted' ELSE $3 END AS state FROM exploration_nodes WHERE id=$1 AND exploration_id=$2 AND kind='intent' AND state='running' FOR UPDATE) UPDATE exploration_nodes n SET state=r.state,completed_at=now(),content_version=content_version+1,payload=n.payload || jsonb_build_object('execution_end',jsonb_build_object('state',r.state,'requested_state',$3::text,'failure_kind',$4::text,'next_action',$5::text)) FROM result r WHERE n.id=r.id`, id, s.expID, state, kind, action)
 	return err

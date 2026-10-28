@@ -22,16 +22,16 @@ func (s *Server) syncSSStartJob(w http.ResponseWriter, r *http.Request) {
 	if req.RetryRunID > 0 {
 		previous, err := s.m.pg.GetSyncRun(r.Context(), req.RetryRunID)
 		if err != nil || previous == nil {
-			writeErr(w, 400, "重试来源不存在")
+			writeErr(w, 400, "retry source not found")
 			return
 		}
 		if previous.Status == "running" {
-			writeErr(w, 409, "请等待原同步结束")
+			writeErr(w, 409, "please wait for the original sync to finish")
 			return
 		}
 		id := req.RetryRunID
 		if err := json.Unmarshal(previous.Request, &req); err != nil {
-			writeErr(w, 400, "原同步请求无效")
+			writeErr(w, 400, "original sync request is invalid")
 			return
 		}
 		req.RetryRunID = id
@@ -41,7 +41,7 @@ func (s *Server) syncSSStartJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.ssJobMu.TryLock() {
-		writeErr(w, 409, "已有后台同步运行，请在历史中查看进度")
+		writeErr(w, 409, "a background sync is already running; check its progress in the history")
 		return
 	}
 	req.Background = true
@@ -49,7 +49,7 @@ func (s *Server) syncSSStartJob(w http.ResponseWriter, r *http.Request) {
 	source, err := s.findMCPByName(scopeSentryMCPName)
 	if req.RetryRunID == 0 && (err != nil || source == nil || !source.Enabled) {
 		s.ssJobMu.Unlock()
-		writeErr(w, 400, "数据源未就绪")
+		writeErr(w, 400, "data source is not ready")
 		return
 	}
 	raw, _ := json.Marshal(req)
@@ -75,11 +75,11 @@ func (s *Server) syncSSResumeJob(w http.ResponseWriter, r *http.Request) {
 	}
 	id, ok := pathInt(r, "id")
 	if !ok || id <= 0 {
-		writeErr(w, 400, "无效记录编号")
+		writeErr(w, 400, "invalid record id")
 		return
 	}
 	if !s.ssJobMu.TryLock() {
-		writeErr(w, 409, "已有后台同步运行")
+		writeErr(w, 409, "a background sync is already running")
 		return
 	}
 	dispatched := false
@@ -94,12 +94,12 @@ func (s *Server) syncSSResumeJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if run == nil {
-		writeErr(w, 404, "同步记录不存在")
+		writeErr(w, 404, "sync record not found")
 		return
 	}
 	var req ssSyncReq
 	if err := json.Unmarshal(run.Request, &req); err != nil || !req.Background {
-		writeErr(w, 400, "该记录不支持断点恢复，请重新同步")
+		writeErr(w, 400, "this record does not support resuming; please sync again")
 		return
 	}
 	if err := req.normalize(); err != nil {
@@ -107,7 +107,7 @@ func (s *Server) syncSSResumeJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.m.pg.ResumeSyncRun(r.Context(), id); err != nil {
-		writeErr(w, 409, "记录正在运行或已完成")
+		writeErr(w, 409, "record is running or already finished")
 		return
 	}
 	var result ssSyncResult
@@ -133,7 +133,7 @@ func (s *Server) executeSSJob(req ssSyncReq, result ssSyncResult) {
 	defer cancel()
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			ssAppendIssue(&result.Errors, fmt.Sprintf("同步异常退出: %v", recovered))
+			ssAppendIssue(&result.Errors, fmt.Sprintf("sync exited abnormally: %v", recovered))
 			result.Status = "interrupted"
 		}
 		if result.Status == "running" {
@@ -141,7 +141,7 @@ func (s *Server) executeSSJob(req ssSyncReq, result ssSyncResult) {
 		}
 		if ctx.Err() != nil {
 			result.Status = "interrupted"
-			ssAppendIssue(&result.Errors, "同步中断，可从已保存页面继续")
+			ssAppendIssue(&result.Errors, "sync interrupted; it can continue from the saved pages")
 		}
 		_ = s.persistSSResult(context.Background(), &result)
 	}()
@@ -213,10 +213,10 @@ func (s *Server) executeSSJob(req ssSyncReq, result ssSyncResult) {
 							break
 						}
 						if warning := ssRawWarnings(raw); warning != "" {
-							ssAppendIssue(&result.Warnings, fmt.Sprintf("%s/%s 详情未同步: %s", target, kind, warning))
+							ssAppendIssue(&result.Warnings, fmt.Sprintf("%s/%s details not synced: %s", target, kind, warning))
 						}
 						if item.RawOmitted {
-							ssAppendIssue(&result.Warnings, "单条原始 JSON 超过 16 MiB，未保存；可通过源资产 ID 回查")
+							ssAppendIssue(&result.Warnings, "a single raw JSON exceeds 16 MiB and was not saved; look it up via the source asset ID")
 						}
 					}
 					if one.Error != "" {
@@ -273,7 +273,7 @@ func ssFetchPage(ctx context.Context, cl ssToolCaller, kind string, query map[st
 	}
 	text, err := cl.Call(ctx, "list_assets", args)
 	if err != nil {
-		return nil, fmt.Errorf("第 %d 页: %w", page, err)
+		return nil, fmt.Errorf("page %d: %w", page, err)
 	}
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(text), &envelope); err != nil {
@@ -281,7 +281,7 @@ func ssFetchPage(ctx context.Context, cl ssToolCaller, kind string, query map[st
 	}
 	raw, ok := envelope["list"]
 	if !ok {
-		return nil, fmt.Errorf("第 %d 页缺少 list", page)
+		return nil, fmt.Errorf("page %d is missing list", page)
 	}
 	if string(raw) == "null" {
 		total, err := ssCountAssets(ctx, cl, kind, query)
@@ -289,7 +289,7 @@ func ssFetchPage(ctx context.Context, cl ssToolCaller, kind string, query map[st
 			return nil, err
 		}
 		if total > (page-1)*size {
-			return nil, fmt.Errorf("第 %d 页为空但源端仍有 %d 条", page, total)
+			return nil, fmt.Errorf("page %d is empty but the source still has %d items", page, total)
 		}
 	}
 	p := &db.SyncPage{}
@@ -297,7 +297,7 @@ func ssFetchPage(ctx context.Context, cl ssToolCaller, kind string, query map[st
 		return nil, err
 	}
 	if len(p.Items) > size {
-		return nil, fmt.Errorf("第 %d 页返回条数超过请求页长", page)
+		return nil, fmt.Errorf("page %d returned more items than the requested page size", page)
 	}
 	p.Count = len(p.Items)
 	p.Last = p.Count < size

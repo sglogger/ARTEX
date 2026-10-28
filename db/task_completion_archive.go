@@ -42,7 +42,7 @@ func restoreTaskCompletion(tx *sql.Tx, taskID int64, raw json.RawMessage) error 
 			}
 		}
 		c.Phase = "interrupted"
-		c.Reason = "归档恢复使旧收官决定失效；已保留当时快照，等待重新复核"
+		c.Reason = "Archive restore voided the old completion decision; the snapshot of that time is kept, waiting for a new review"
 	}
 	if len(c.Snapshot) == 0 {
 		c.Snapshot = json.RawMessage(`{}`)

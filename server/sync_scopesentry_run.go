@@ -54,22 +54,22 @@ func newSSSyncResult() ssSyncResult {
 		Status: "running", Synced: map[string]int{"subdomain": 0, "app": 0, "service": 0, "ip": 0},
 		Companies: []string{}, Warnings: []string{}, Errors: []string{}, Targets: []ssTargetResult{},
 		Counting:            "source_records_and_unique_assets",
-		CountingDescription: "处理统计按源记录区分新增、更新、未变化、跳过和失败；新增/更新不计 last_seen 等时间字段。去重资产按源记录及派生写入涉及的资产 ID 统计，同一资产以新增、更新、未变化的顺序归类。分页遍历不保证源端变化期间的快照完整性。",
+		CountingDescription: "Processing counts classify source records as added, updated, unchanged, skipped and failed; added/updated ignore time fields such as last_seen. Deduplicated assets are counted by source record and the asset IDs touched by derived writes, and each asset is classified in the order added, updated, unchanged. Paginated traversal does not guarantee snapshot consistency while the source changes.",
 	}
 }
 
 func (req *ssSyncReq) normalize() error {
 	if req.Dimension != "project" && req.Dimension != "task" {
-		return errors.New("dimension 必须是 project 或 task")
+		return errors.New("dimension must be project or task")
 	}
 	if len(req.Targets) == 0 {
-		return errors.New("targets 不能为空")
+		return errors.New("targets must not be empty")
 	}
 	targets := []string{}
 	seen := map[string]bool{}
 	for _, target := range req.Targets {
 		if strings.TrimSpace(target) == "" {
-			return errors.New("target 不能为空白")
+			return errors.New("target must not be blank")
 		}
 		if !seen[target] {
 			targets = append(targets, target)
@@ -84,7 +84,7 @@ func (req *ssSyncReq) normalize() error {
 	seen = map[string]bool{}
 	for _, kind := range req.AssetTypes {
 		if kind != "subdomain" && kind != "service" && kind != "app" {
-			return fmt.Errorf("未知资产类型: %s", kind)
+			return fmt.Errorf("unknown asset type: %s", kind)
 		}
 		if !seen[kind] {
 			types = append(types, kind)
@@ -132,7 +132,7 @@ func (s *Server) syncSSRun(w http.ResponseWriter, r *http.Request) {
 	}
 	run, err := pg.CreateSyncRun(r.Context(), sourceID, requestJSON, initialJSON)
 	if err != nil {
-		writeErr(w, 500, "无法保存同步历史，未开始同步: "+err.Error())
+		writeErr(w, 500, "could not save sync history, sync not started: "+err.Error())
 		return
 	}
 	result.RunID, result.StartedAt = run.ID, run.StartedAt
@@ -142,7 +142,7 @@ func (s *Server) syncSSRun(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if !finished {
 			result.Status = "interrupted"
-			ssAppendIssue(&result.Errors, "同步处理异常退出；已提交记录可在历史明细查看")
+			ssAppendIssue(&result.Errors, "sync processing exited abnormally; committed records can be viewed in the history details")
 			_ = s.persistSSResult(context.Background(), &result)
 		}
 	}()
@@ -150,13 +150,13 @@ func (s *Server) syncSSRun(w http.ResponseWriter, r *http.Request) {
 		result.UniqueAssets = ssUniqueAssets(seenAssets)
 		if ctx.Err() != nil {
 			result.Status = "interrupted"
-			ssAppendIssue(&result.Errors, "同步中断: "+ctx.Err().Error())
+			ssAppendIssue(&result.Errors, "sync interrupted: "+ctx.Err().Error())
 		} else {
 			result.Status = ssOverallStatus(result)
 		}
 		if err := s.persistSSResult(context.WithoutCancel(r.Context()), &result); err != nil {
 			result.Status = "failed"
-			ssAppendIssue(&result.Errors, "保存同步终态失败，请通过历史编号核查: "+err.Error())
+			ssAppendIssue(&result.Errors, "failed to save the final sync state, check it via the history ID: "+err.Error())
 		} else {
 			finished = true
 			refreshCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
@@ -169,18 +169,18 @@ func (s *Server) syncSSRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, result)
 	}
 	if sourceErr != nil {
-		ssAppendIssue(&result.Errors, "读取数据源失败: "+sourceErr.Error())
+		ssAppendIssue(&result.Errors, "failed to read data source: "+sourceErr.Error())
 		finish()
 		return
 	}
 	if source == nil || !source.Enabled {
-		ssAppendIssue(&result.Errors, "ScopeSentry 数据源不存在或未启用")
+		ssAppendIssue(&result.Errors, "ScopeSentry data source does not exist or is not enabled")
 		finish()
 		return
 	}
 	cl, err := s.scopeSentryClient(ctx)
 	if err != nil {
-		ssAppendIssue(&result.Errors, "连接数据源失败: "+err.Error())
+		ssAppendIssue(&result.Errors, "failed to connect to data source: "+err.Error())
 		finish()
 		return
 	}
@@ -200,7 +200,7 @@ func (s *Server) syncSSRun(w http.ResponseWriter, r *http.Request) {
 			result.Targets = append(result.Targets, one)
 			index := len(result.Targets) - 1
 			if err := s.persistSSResult(ctx, &result); err != nil {
-				ssAppendIssue(&result.Errors, "保存同步进度失败: "+err.Error())
+				ssAppendIssue(&result.Errors, "failed to save sync progress: "+err.Error())
 				finish()
 				return
 			}
@@ -211,13 +211,13 @@ func (s *Server) syncSSRun(w http.ResponseWriter, r *http.Request) {
 			result.Stats.Fetched += len(items)
 			if fetchErr != nil {
 				one.Error = fetchErr.Error()
-				ssAppendIssue(&result.Errors, fmt.Sprintf("%s(%s) 拉取未完成: %v", kind, target, fetchErr))
+				ssAppendIssue(&result.Errors, fmt.Sprintf("%s(%s) fetch incomplete: %v", kind, target, fetchErr))
 			}
 			if truncated {
-				ssAppendIssue(&result.Warnings, fmt.Sprintf("%s(%s) 超过 %d 条，本次未处理剩余数据", kind, target, syncMaxPerType))
+				ssAppendIssue(&result.Warnings, fmt.Sprintf("%s(%s) exceeds %d items; the remaining data was not processed this time", kind, target, syncMaxPerType))
 			}
 			if err := pg.AddSyncFetched(ctx, run.ID, len(items)); err != nil {
-				one.Error = "保存拉取计数失败: " + err.Error()
+				one.Error = "failed to save fetch count: " + err.Error()
 				ssAppendIssue(&result.Errors, one.Error)
 				one.Status = "failed"
 				result.Targets[index] = one
@@ -228,7 +228,7 @@ func (s *Server) syncSSRun(w http.ResponseWriter, r *http.Request) {
 			// commits. History derives written outcomes from committed observations.
 			result.Targets[index] = one
 			if err := s.persistSSResult(ctx, &result); err != nil {
-				ssAppendIssue(&result.Errors, "保存拉取进度失败: "+err.Error())
+				ssAppendIssue(&result.Errors, "failed to save fetch progress: "+err.Error())
 				finish()
 				return
 			}
@@ -242,7 +242,7 @@ func (s *Server) syncSSRun(w http.ResponseWriter, r *http.Request) {
 					SourceTargetID: one.SourceTargetID, AssetType: kind, ItemIndex: itemIndex,
 					SourceAssetID: ssSourceAssetID(raw), Raw: raw}
 				if err := s.storeSSItem(ctx, observation); err != nil {
-					one.Error = "保存资产处理明细失败: " + err.Error()
+					one.Error = "failed to save asset processing details: " + err.Error()
 					ssAppendIssue(&result.Errors, one.Error)
 					one.Status = "failed"
 					result.Targets[index] = one
@@ -256,9 +256,9 @@ func (s *Server) syncSSRun(w http.ResponseWriter, r *http.Request) {
 					result.Synced[kind]++
 					result.Synced["ip"] += observation.DerivedIPWritten
 				} else if observation.Status == "skipped" {
-					ssAppendIssue(&result.Warnings, fmt.Sprintf("%s(%s) 第 %d 条: %s", kind, target, itemIndex+1, observation.Reason))
+					ssAppendIssue(&result.Warnings, fmt.Sprintf("%s(%s) item %d: %s", kind, target, itemIndex+1, observation.Reason))
 				} else {
-					ssAppendIssue(&result.Errors, fmt.Sprintf("%s(%s) 第 %d 条: %s", kind, target, itemIndex+1, observation.Reason))
+					ssAppendIssue(&result.Errors, fmt.Sprintf("%s(%s) item %d: %s", kind, target, itemIndex+1, observation.Reason))
 				}
 			}
 			one.Status = ssTargetStatus(one)
@@ -274,24 +274,24 @@ func (s *Server) syncSSRun(w http.ResponseWriter, r *http.Request) {
 func (s *Server) syncSSCompany(ctx context.Context, cl ssToolCaller, target string, result *ssSyncResult) {
 	name, roots, err := s.ssProjectMeta(ctx, cl, target)
 	if err != nil {
-		ssAppendIssue(&result.Warnings, fmt.Sprintf("项目 %s 详情获取失败: %v", target, err))
+		ssAppendIssue(&result.Warnings, fmt.Sprintf("failed to fetch details of project %s: %v", target, err))
 		return
 	}
 	if strings.TrimSpace(name) == "" {
-		ssAppendIssue(&result.Warnings, fmt.Sprintf("项目 %s 缺少名称，未建立企业", target))
+		ssAppendIssue(&result.Warnings, fmt.Sprintf("project %s has no name; no company created", target))
 		return
 	}
 	cs := s.companyStore()
 	id, err := cs.UpsertByName(name)
 	if err != nil {
-		ssAppendIssue(&result.Warnings, fmt.Sprintf("公司 %s 创建失败: %v", name, err))
+		ssAppendIssue(&result.Warnings, fmt.Sprintf("failed to create company %s: %v", name, err))
 		return
 	}
 	result.Companies = append(result.Companies, name)
 	if len(roots) > 0 {
 		_, _, _, issues := cs.AddScope(id, roots, "scopesentry:"+name)
 		for _, issue := range issues {
-			ssAppendIssue(&result.Warnings, fmt.Sprintf("公司 %s 范围写入失败: %s", name, issue))
+			ssAppendIssue(&result.Warnings, fmt.Sprintf("failed to write scope for company %s: %s", name, issue))
 		}
 	}
 	// AddScope already rebuilds existing attribution atomically; each following
@@ -418,6 +418,6 @@ func ssAppendIssue(issues *[]string, message string) {
 	if len(*issues) < limit {
 		*issues = append(*issues, message)
 	} else if len(*issues) == limit {
-		*issues = append(*issues, "其余信息请查看同步历史明细")
+		*issues = append(*issues, "see the sync history details for the rest")
 	}
 }

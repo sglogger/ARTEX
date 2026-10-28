@@ -27,7 +27,7 @@ func (s *Server) pgListTools(w http.ResponseWriter, r *http.Request) {
 	// catalog query, so agent assembly never pays for this aggregate.
 	counts, countErr := pg.ToolUsageCounts()
 	if countErr != nil {
-		log.Printf("[tools] 读取调用统计失败: %v", countErr)
+		log.Printf("[tools] failed to read call statistics: %v", countErr)
 	} else {
 		for _, tool := range ts {
 			tool.Calls = counts[tool.Key]
@@ -55,7 +55,7 @@ func (s *Server) pgToolUsage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	writeJSON(w, 200, map[string]any{"usage": rows, "task_id": taskID, "history_note": "旧记录和未返回的调用为 unknown；已归档任务的历史总量仍在 tools.calls，角色/结果明细仅包含当前账本。"})
+	writeJSON(w, 200, map[string]any{"usage": rows, "task_id": taskID, "history_note": "Old records and calls without a result are unknown; historical totals of archived tasks are still in tools.calls, while role/result details only cover the current ledger."})
 }
 
 // pgUpdateTool saves the page-editable fields of a built-in tool: description,
@@ -74,7 +74,7 @@ func (s *Server) pgUpdateTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if cur == nil {
-		writeErr(w, 404, "工具不存在: "+key)
+		writeErr(w, 404, "tool not found: "+key)
 		return
 	}
 	var body struct {
@@ -96,7 +96,7 @@ func (s *Server) pgUpdateTool(w http.ResponseWriter, r *http.Request) {
 }
 
 // pgResetTool overwrites a tool row with its code-defined defaults (description,
-// schema, agent binding) and re-enables it — the explicit "恢复默认" action, since
+// schema, agent binding) and re-enables it — the explicit "restore default" action, since
 // startup seeding is first-insert-only and never overwrites edits.
 func (s *Server) pgResetTool(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
@@ -131,5 +131,5 @@ func (s *Server) pgResetTool(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"ok": true})
 		return
 	}
-	writeErr(w, 404, "非内置工具或不存在: "+key)
+	writeErr(w, 404, "not a built-in tool or does not exist: "+key)
 }

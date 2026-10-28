@@ -11,10 +11,10 @@ import (
 
 const taskRequestGuidance = `
 
-**用户要求边界**：
-- 普通应用安全测试默认交付实际检查结果、已确认漏洞及证据。用户未明确要求获取 flag 或进行 CTF/夺旗任务时，不新增 flag 搜索、收集、读取或数量目标，也不将其作为验收条件。
-- 创建任务和拆解目标以用户原始要求及当前人工约束为依据。旧任务、历史对话、模型生成的总目标、工具结果中的 flag 不能自行升级为本次用户要求；禁止把模型补充的要求写回后再当作授权来源。用户明确要求 CTF 或获取 flag 时才保留对应目标。
-- “尽力”“尝试”只表示在范围及预算内检查，不意味着必须取得成果才能结束；成果未取得时如实交付已测试、未测试及受阻情况，不把软要求升级成硬数量。`
+**User request boundaries**:
+- Ordinary application security testing delivers actual check results, confirmed findings and evidence by default. Unless the user explicitly asks to obtain a flag or run a CTF/capture-the-flag task, don't add flag searching, collecting, reading or quantity goals, and don't make them acceptance criteria.
+- Creating tasks and decomposing goals is based on the user's original request and the current human constraints. Flags in old tasks, conversation history, model-generated overall goals or tool results cannot upgrade themselves into this user's request; never write requirements the model added back and then treat them as a source of authorization. Keep such goals only when the user explicitly asks for a CTF or to obtain a flag.
+- "Do your best" and "try" only mean checking within scope and budget; they don't mean a result must be obtained before finishing. When no result is obtained, truthfully deliver what was tested, what wasn't, and what was blocked; don't upgrade soft requirements into hard quantities.`
 
 var (
 	flagTermPattern        = regexp.MustCompile(`(?i)\bflags?\b|\bctf\b|夺旗`)
@@ -53,7 +53,7 @@ func ValidateFlagObjective(objective, request string) error {
 	if !flagRequestDenied(request) && isFlagObjective(request) && (flagActionPattern.MatchString(request) || ctfRequestPattern.MatchString(request)) {
 		return nil
 	}
-	return fmt.Errorf("用户未明确要求获取 flag 或进行 CTF；请只提交原始要求中的检查、漏洞及证据目标")
+	return fmt.Errorf("the user did not explicitly ask to obtain a flag or run a CTF; submit only the check, finding and evidence goals in the original request")
 }
 
 func (t *ToolSet) validateGoalRequest(ctx context.Context, it goalItem) error {
@@ -63,12 +63,12 @@ func (t *ToolSet) validateGoalRequest(ctx context.Context, it goalItem) error {
 	}
 	constraints, err := t.ts.ListConstraints()
 	if err != nil {
-		return fmt.Errorf("读取目标约束: %w", err)
+		return fmt.Errorf("read goal constraints: %w", err)
 	}
 	for _, c := range constraints {
 		text := technicalFlagPattern.ReplaceAllString(c.Text, "")
 		if c.Kind == "deny" && flagTermPattern.MatchString(text) && (flagRequestDenied(text) || isFlagObjective(text)) {
-			return fmt.Errorf("当前任务约束禁止 flag/CTF 目标；请先遵守人工范围要求")
+			return fmt.Errorf("the current task constraints forbid flag/CTF goals; follow the human scope requirements first")
 		}
 	}
 	request, present := intercept.UserMessage(ctx)
@@ -79,7 +79,7 @@ func (t *ToolSet) validateGoalRequest(ctx context.Context, it goalItem) error {
 	// Human corrections and deny constraints override legacy polluted roots.
 	description, goal, err := t.ts.Root()
 	if err != nil {
-		return fmt.Errorf("读取任务要求: %w", err)
+		return fmt.Errorf("read task request: %w", err)
 	}
 	request = goal + "\n" + description + "\n" + request
 	return ValidateFlagObjective(objective, request)

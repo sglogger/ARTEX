@@ -111,7 +111,7 @@ func TestGuardConfigurationFailuresFailClosed(t *testing.T) {
 			}
 			g := NewWithInterceptor(ic)
 			blocked, reason, _ := g.Hooks().PreToolUse(t.Context(), "Bash", guardProbeInput)
-			if !blocked || !strings.Contains(reason, "加载失败") {
+			if !blocked || !strings.Contains(reason, "failed to load") {
 				t.Fatalf("unreadable configuration allowed execution: %v %q", blocked, reason)
 			}
 			assertTerminalAudit(t, g, blocked, reason)

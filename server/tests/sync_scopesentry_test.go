@@ -105,7 +105,7 @@ func TestSSRunRetainsEarlierPagesAndHistoryWithoutSource(t *testing.T) {
 	if result.RunID == 0 || result.Status != "partial" || result.Stats.Fetched != 2 || result.Stats.Written != 1 || result.Stats.Created != 1 || result.Stats.Skipped != 1 || result.UniqueAssets.Total != 1 {
 		t.Fatalf("result=%+v", result)
 	}
-	if len(result.Targets) != 1 || !strings.Contains(result.Targets[0].Error, "第 3 页") {
+	if len(result.Targets) != 1 || !strings.Contains(result.Targets[0].Error, "page 3") {
 		t.Fatalf("targets=%+v", result.Targets)
 	}
 	source.Close()
@@ -226,7 +226,7 @@ func TestSSPageAllRetainsEarlierPagesOnFailure(t *testing.T) {
 	cause := errors.New("source unavailable")
 	fixture := &ssPageFixture{total: 1000, failPage: 3, err: cause}
 	items, truncated, err := (&Server{}).ssPageAll(t.Context(), fixture, "asset", nil, 100)
-	if len(items) != 200 || truncated || !errors.Is(err, cause) || !strings.Contains(err.Error(), "第 3 页") {
+	if len(items) != 200 || truncated || !errors.Is(err, cause) || !strings.Contains(err.Error(), "page 3") {
 		t.Fatalf("items=%d truncated=%v error=%v", len(items), truncated, err)
 	}
 	fixture = &ssPageFixture{total: 5000, failPage: 51, err: cause}

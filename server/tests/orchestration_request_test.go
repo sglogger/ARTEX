@@ -13,17 +13,17 @@ import (
 
 func TestSpawnTaskIgnoresModelSuppliedFlagAuthorization(t *testing.T) {
 	for _, tc := range []struct{ name, source, message string }{
-		{"ordinary human", intercept.BackgroundUserMessage, "全面测试普通应用"},
+		{"ordinary human", intercept.BackgroundUserMessage, "thoroughly test an ordinary application"},
 		{"no human", "", ""},
-		{"worker summary", "worker_summary", "获取flag"},
-		{"explicit denial", intercept.BackgroundUserMessage, "不要获取flag"},
+		{"worker summary", "worker_summary", "get the flag"},
+		{"explicit denial", intercept.BackgroundUserMessage, "do not get the flag"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := intercept.WithReviewContext(t.Context(), "", intercept.ReviewBackground{Source: tc.source, Text: tc.message})
 			// No Manager: rejection must happen before any persistent side effect.
 			s := &Server{}
-			result, err := s.toolSpawnTask().Call(ctx, json.RawMessage(`{"description":"app test","goal":"尽力获取漏洞与flag","user_request":"用户要求获取flag"}`), nil)
-			if err != nil || !result.IsError || !strings.Contains(result.Flatten(), "用户未明确要求") {
+			result, err := s.toolSpawnTask().Call(ctx, json.RawMessage(`{"description":"app test","goal":"do your best to get findings and the flag","user_request":"the user asks to get the flag"}`), nil)
+			if err != nil || !result.IsError || !strings.Contains(result.Flatten(), "did not explicitly ask") {
 				t.Fatalf("result=%s err=%v", result.Flatten(), err)
 			}
 		})
@@ -32,10 +32,10 @@ func TestSpawnTaskIgnoresModelSuppliedFlagAuthorization(t *testing.T) {
 
 func TestSpawnTaskAcceptsExplicitCTFAndOrdinaryFlags(t *testing.T) {
 	for _, tc := range []struct{ name, goal, message string }{
-		{"explicit flag", "获取flag", "尝试获取flag"},
-		{"explicit CTF", "获取flag", "这是CTF靶场任务"},
-		{"ordinary", "检查应用登录", "测试应用"},
-		{"CLI", "检查命令行 flag 参数", "检查配置"},
+		{"explicit flag", "get the flag", "try to get the flag"},
+		{"explicit CTF", "get the flag", "this is a CTF range task"},
+		{"ordinary", "check application login", "test the application"},
+		{"CLI", "check the command line flag parameter", "check the config"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := intercept.WithReviewContext(t.Context(), "", intercept.ReviewBackground{Source: intercept.BackgroundUserMessage, Text: tc.message})
@@ -43,7 +43,7 @@ func TestSpawnTaskAcceptsExplicitCTFAndOrdinaryFlags(t *testing.T) {
 			// A later, independent validation is the sentinel: the request boundary
 			// permits these goals without starting a background task during this test.
 			result, err := (&Server{}).toolSpawnTask().Call(ctx, input, nil)
-			if err != nil || !result.IsError || !strings.Contains(result.Flatten(), "关联任务最多选择") {
+			if err != nil || !result.IsError || !strings.Contains(result.Flatten(), "linked tasks can be selected") {
 				t.Fatalf("result=%s err=%v", result.Flatten(), err)
 			}
 		})

@@ -418,7 +418,7 @@ func (d *DB) FinishTaskCompletion(ctx context.Context, taskID, attemptID int64, 
 		for _, work := range input.Work {
 			reason := work.Reason
 			if reason == "" {
-				reason = "任务时间预算耗尽；此检查未完成"
+				reason = "Task time budget exhausted; this check is incomplete"
 			}
 			for index := range prior.Work {
 				if prior.Work[index].IntentID == work.IntentID {
@@ -482,5 +482,5 @@ func (d *DB) RecoverTaskCompletion(ctx context.Context, taskID int64) error {
 	if err != nil || current == nil {
 		return err
 	}
-	return d.InterruptTaskCompletion(ctx, taskID, current.AttemptID, "进程重启，旧收官决定失效；保留证据并重新复核", true)
+	return d.InterruptTaskCompletion(ctx, taskID, current.AttemptID, "Process restarted, the old completion decision is void; evidence kept for a new review", true)
 }

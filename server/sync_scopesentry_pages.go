@@ -37,15 +37,15 @@ func (s *Server) ssPageAll(ctx context.Context, cl ssToolCaller, ssType string, 
 		}
 		text, err := cl.Call(ctx, "list_assets", args)
 		if err != nil {
-			return items, false, fmt.Errorf("第 %d 页: %w", page, err)
+			return items, false, fmt.Errorf("page %d: %w", page, err)
 		}
 		var envelope map[string]json.RawMessage
 		if err := json.Unmarshal([]byte(text), &envelope); err != nil {
-			return items, false, fmt.Errorf("第 %d 页解析失败: %w", page, err)
+			return items, false, fmt.Errorf("page %d failed to parse: %w", page, err)
 		}
 		raw, exists := envelope["list"]
 		if !exists {
-			return items, false, fmt.Errorf("第 %d 页响应缺少有效 list 数组", page)
+			return items, false, fmt.Errorf("page %d response is missing a valid list array", page)
 		}
 		if string(raw) == "null" {
 			// ScopeSentry 1.9.4 emits null for an empty asset/subdomain page.
@@ -53,13 +53,13 @@ func (s *Server) ssPageAll(ctx context.Context, cl ssToolCaller, ssType string, 
 			// silently masquerade as a successful empty source.
 			total, countErr := ssCountAssets(ctx, cl, ssType, query)
 			if countErr != nil || total > (page-1)*pageSize {
-				return items, false, fmt.Errorf("第 %d 页 list 为空但无法核实分页终点 (total=%d): %v", page, total, countErr)
+				return items, false, fmt.Errorf("page %d list is empty but the pagination end cannot be verified (total=%d): %v", page, total, countErr)
 			}
 			return items, false, nil
 		}
 		var batch []json.RawMessage
 		if err := json.Unmarshal(raw, &batch); err != nil {
-			return items, false, fmt.Errorf("第 %d 页 list 解析失败: %w", page, err)
+			return items, false, fmt.Errorf("page %d list failed to parse: %w", page, err)
 		}
 		remaining := syncMaxPerType - len(items)
 		if len(batch) > remaining {
@@ -89,7 +89,7 @@ func ssCountAssets(ctx context.Context, cl ssToolCaller, kind string, query map[
 		return 0, err
 	}
 	if response.Total == nil || *response.Total < 0 {
-		return 0, fmt.Errorf("count_assets 缺少有效 total")
+		return 0, fmt.Errorf("count_assets is missing a valid total")
 	}
 	return *response.Total, nil
 }

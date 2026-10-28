@@ -19,10 +19,10 @@ func (s *Server) taskCoverage(w http.ResponseWriter, r *http.Request) {
 	}
 	as := s.m.Assets()
 	if as == nil {
-		writeErr(w, 503, "asset store 未启用")
+		writeErr(w, 503, "asset store not enabled")
 		return
 	}
-	// 资产覆盖度功能关闭 → 短路返回 {enabled:false}，前端据此隐藏覆盖度卡片/进度。
+	// Asset coverage disabled → short-circuit with {enabled:false}; the frontend hides the coverage card/progress accordingly.
 	if !t.CoverageEnabled {
 		writeJSON(w, 200, &db.Coverage{Enabled: false, ByType: []db.CoverageByType{}})
 		return
@@ -38,7 +38,7 @@ func (s *Server) taskCoverage(w http.ResponseWriter, r *http.Request) {
 }
 
 // taskCoverageGraph returns the force-directed asset coverage graph for a task:
-// all in-scope assets (每种类型) + 连接用的根域名/公司节点, each carrying tested/in_scope.
+// all in-scope assets (of every type) + the root domain/company nodes used for connections, each carrying tested/in_scope.
 func (s *Server) taskCoverageGraph(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -47,7 +47,7 @@ func (s *Server) taskCoverageGraph(w http.ResponseWriter, r *http.Request) {
 	}
 	as := s.m.Assets()
 	if as == nil {
-		writeErr(w, 503, "asset store 未启用")
+		writeErr(w, 503, "asset store not enabled")
 		return
 	}
 	taskID, _ := strconv.ParseInt(t.ID, 10, 64)
@@ -60,7 +60,7 @@ func (s *Server) taskCoverageGraph(w http.ResponseWriter, r *http.Request) {
 }
 
 // taskAssetRefs returns the intents / facts / findings in this task anchored to a
-// given asset id — powers the coverage-graph node drawer's「关联意图 / 关联事实」。
+// given asset id — powers the coverage-graph node drawer's "related intents / related facts".
 func (s *Server) taskAssetRefs(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -69,7 +69,7 @@ func (s *Server) taskAssetRefs(w http.ResponseWriter, r *http.Request) {
 	}
 	assetID, _ := strconv.ParseInt(r.URL.Query().Get("asset_id"), 10, 64)
 	if assetID <= 0 {
-		writeErr(w, 400, "需要 asset_id")
+		writeErr(w, 400, "asset_id is required")
 		return
 	}
 	refs, err := t.Store.AssetRefsWithSources(assetID)
@@ -103,7 +103,7 @@ func (s *Server) taskScopeList(w http.ResponseWriter, r *http.Request) {
 	}
 	as := s.m.Assets()
 	if as == nil {
-		writeErr(w, 503, "asset store 未启用")
+		writeErr(w, 503, "asset store not enabled")
 		return
 	}
 	taskID, _ := strconv.ParseInt(t.ID, 10, 64)
@@ -125,16 +125,16 @@ func (s *Server) taskScopeAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	as := s.m.Assets()
 	if as == nil {
-		writeErr(w, 503, "asset store 未启用")
+		writeErr(w, 503, "asset store not enabled")
 		return
 	}
 	if !s.engine.beginTaskOperation(t.ID) {
-		writeErr(w, 409, "任务正在删除")
+		writeErr(w, 409, "task is being deleted")
 		return
 	}
 	defer s.engine.decInflight(t.ID)
 	if !evidenceEditQuiescent(s, t) {
-		writeErr(w, 409, "请先暂停任务并等待执行退出，再修改测试范围")
+		writeErr(w, 409, "pause the task and wait for execution to exit before changing the test scope")
 		return
 	}
 	var body struct {
@@ -152,7 +152,7 @@ func (s *Server) taskScopeAdd(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, err.Error())
 		return
 	}
-	t.NotifyGoalEdited("测试范围", body.Reason)
+	t.NotifyGoalEdited("test scope", body.Reason)
 	writeJSON(w, 200, ts)
 }
 
@@ -166,16 +166,16 @@ func (s *Server) taskScopeDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	as := s.m.Assets()
 	if as == nil {
-		writeErr(w, 503, "asset store 未启用")
+		writeErr(w, 503, "asset store not enabled")
 		return
 	}
 	if !s.engine.beginTaskOperation(t.ID) {
-		writeErr(w, 409, "任务正在删除")
+		writeErr(w, 409, "task is being deleted")
 		return
 	}
 	defer s.engine.decInflight(t.ID)
 	if !evidenceEditQuiescent(s, t) {
-		writeErr(w, 409, "请先暂停任务并等待执行退出，再修改测试范围")
+		writeErr(w, 409, "pause the task and wait for execution to exit before changing the test scope")
 		return
 	}
 	taskID, _ := strconv.ParseInt(t.ID, 10, 64)
@@ -184,7 +184,7 @@ func (s *Server) taskScopeDelete(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "invalid scope id")
 		return
 	}
-	_, err = as.EditManualTaskScope(r.Context(), taskID, scopeID, "", "", "删除范围条目")
+	_, err = as.EditManualTaskScope(r.Context(), taskID, scopeID, "", "", "delete scope entry")
 	if errors.Is(err, sql.ErrNoRows) {
 		writeErr(w, 404, "scope row not found")
 		return
@@ -193,6 +193,6 @@ func (s *Server) taskScopeDelete(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	t.NotifyGoalEdited("测试范围", "删除范围条目")
+	t.NotifyGoalEdited("test scope", "delete scope entry")
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }

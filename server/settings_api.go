@@ -26,7 +26,7 @@ func (s *Server) settingsPayload() map[string]any {
 	pyStored, _, _ := s.m.pg.GetSetting(settingPythonInterp)
 	concOn, concLimit := s.m.ConcurrencyLimit()
 	if concLimit == 0 {
-		concLimit = defaultConcurrencyLimit // 关闭时也回显一个合理默认值给 UI
+		concLimit = defaultConcurrencyLimit // echo a sensible default to the UI even when disabled
 	}
 	return map[string]any{
 		"completion_review_seconds": int(reviewOptions.Duration / time.Second),
@@ -38,38 +38,38 @@ func (s *Server) settingsPayload() map[string]any {
 		"web_search_backend":        backend,
 		"brave_key_set":             strings.TrimSpace(braveKey) != "",
 		"tavily_key_set":            strings.TrimSpace(tavilyKey) != "",
-		"web_search_proxy":          proxy,                       // 独立出口代理(http/https/socks5)，空=直连
-		"global_proxy":              s.m.GlobalProxy(),           // 全局出口代理(http/https/socks5)，所有目标流量走它，空=直连
-		"python_interpreter":        strings.TrimSpace(pyStored), // 用户/自动设的值(空=用运行时检测)
-		"workers":                   s.m.Workers(),               // 并发工作 agent 数(默认3)；对之后启动的任务生效
-		"task_concurrency_enabled":  concOn,                      // 任务并发上限开关(默认关)
-		"task_concurrency_limit":    concLimit,                   // 同时运行任务上限(开启后默认5)
-		// LLM 轮询(故障转移)。默认关；开启后走全局激活配置的 agent 在当前配置不可用时
-		// 自动切到下一个配置。bind_fallback 仅在轮询开启时有意义(默认关)。
+		"web_search_proxy":          proxy,                       // separate egress proxy (http/https/socks5), empty = direct
+		"global_proxy":              s.m.GlobalProxy(),           // global egress proxy (http/https/socks5) for all target traffic, empty = direct
+		"python_interpreter":        strings.TrimSpace(pyStored), // value set by the user/auto-detection (empty = runtime detection)
+		"workers":                   s.m.Workers(),               // number of concurrent worker agents (default 3); applies to tasks started afterwards
+		"task_concurrency_enabled":  concOn,                      // task concurrency limit switch (off by default)
+		"task_concurrency_limit":    concLimit,                   // max concurrently running tasks (default 5 when enabled)
+		// LLM rotation (failover). Off by default; when on, agents using the global active profile switch to the next profile
+		// automatically when the current one is unavailable. bind_fallback only matters while rotation is on (off by default).
 		"llm_pool_enabled":       s.m.LLMPoolEnabled(),
 		"llm_pool_bind_fallback": s.m.LLMPoolBindFallback(),
-		// 操作约束注入范围(默认都开):把本任务的 allow/deny 约束拼进对应 agent 的系统提示。
+		// Operating-constraint injection scope (all on by default): splices the task's allow/deny constraints into the matching agent's system prompt.
 		"constraints_inject_planner": s.constraintInjectPlanner(),
 		"constraints_inject_worker":  s.constraintInjectWorker(),
-		// 实验功能:noa 模型驱动上下文压缩(默认关)。开启后平台接入的四类 agent 由 noa
-		// 接管上下文压缩,取代内置 compaction;每 run 读一次,对之后启动的 run 生效。
+		// Experimental: noa model-driven context compaction (off by default). When on, the four kinds of platform agents have context compaction
+		// taken over by noa, replacing the built-in compaction; read once per run, applies to runs started afterwards.
 		"noa_compaction": s.m.NoaCompactionEnabled(),
-		// 漏洞 IM 推送的全局项。渠道本身是独立资源，走 /api/notify/* 管理；
-		// 这里只放「作用于全部渠道」的三项。
+		// Global settings for finding IM notifications. Channels themselves are separate resources managed via /api/notify/*;
+		// only the three settings that "apply to all channels" live here.
 		"notify_enabled":             s.m.pg.GetBool(settingNotifyEnabled, true),
 		"notify_public_base_url":     notifyPublicBaseURL(s.m.pg),
 		"notify_digest_interval_min": notifyDigestIntervalMin(s.m.pg),
 	}
 }
 
-// notifyPublicBaseURL 读推送回链用的外部地址。
+// notifyPublicBaseURL reads the external base URL used for notification backlinks.
 func notifyPublicBaseURL(pg *db.DB) string {
 	v, _, _ := pg.GetSetting(settingNotifyPublicBaseURL)
 	return v
 }
 
-// notifyDigestIntervalMin 读汇总周期（分钟），非法或未配置时回落到默认值。
-// 回显默认值而不是空串，UI 才能把当前生效值填进输入框。
+// notifyDigestIntervalMin reads the digest interval (minutes), falling back to the default when invalid or unset.
+// Echo the default rather than an empty string so the UI can fill the effective value into the input.
 func notifyDigestIntervalMin(pg *db.DB) int {
 	v, ok, _ := pg.GetSetting(settingNotifyDigestMinutes)
 	if !ok {
@@ -86,7 +86,7 @@ func notifyDigestIntervalMin(pg *db.DB) int {
 func (s *Server) pgDetectPython(w http.ResponseWriter, r *http.Request) {
 	p := detectPython()
 	if p == "" {
-		writeErr(w, 404, "未检测到 python(python3/python 均不在 PATH)")
+		writeErr(w, 404, "python not found (neither python3 nor python is on PATH)")
 		return
 	}
 	if err := s.m.pg.SetSetting(settingPythonInterp, p); err != nil {
@@ -105,31 +105,31 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		CompletionReviewTurns   *int  `json:"completion_review_turns"`
 		TrafficCapture          *bool `json:"traffic_capture"`
 		AgentTrafficBinding     *bool `json:"agent_traffic_binding"`
-		LLMRecord               *bool `json:"llm_record"` // LLM 录制开关（默认关）；即时生效，无需重建 agent
+		LLMRecord               *bool `json:"llm_record"` // LLM recording switch (off by default); takes effect immediately, no agent rebuild needed
 		// Web search. WebSearchEnabled/Backend toggle the tool + backend; BraveKey/TavilyKey
 		// are optional — omit (null) to leave a stored key untouched, send "" to clear.
 		WebSearchEnabled *bool   `json:"web_search_enabled"`
 		WebSearchBackend *string `json:"web_search_backend"`
 		BraveKey         *string `json:"brave_search_api_key"`
 		TavilyKey        *string `json:"tavily_search_api_key"`
-		WebSearchProxy   *string `json:"web_search_proxy"`   // 独立出口代理(http/https/socks5)；null=不改，""=清空
-		GlobalProxy      *string `json:"global_proxy"`       // 全局出口代理(http/https/socks5)；null=不改，""=清空(直连)
-		PythonInterp     *string `json:"python_interpreter"` // 自定义脚本工具的 python 解释器路径
-		Workers          *int    `json:"workers"`            // 并发工作 agent 数(>0)；对之后启动的任务生效
-		// 任务并发上限:同时「运行中」的任务数上限。关闭=不限;开启后新建任务超限则排队,有空位自动启动。
+		WebSearchProxy   *string `json:"web_search_proxy"`   // separate egress proxy (http/https/socks5); null = unchanged, "" = clear
+		GlobalProxy      *string `json:"global_proxy"`       // global egress proxy (http/https/socks5); null = unchanged, "" = clear (direct)
+		PythonInterp     *string `json:"python_interpreter"` // python interpreter path for custom script tools
+		Workers          *int    `json:"workers"`            // number of concurrent worker agents (>0); applies to tasks started afterwards
+		// Task concurrency limit: cap on tasks "running" at the same time. Off = unlimited; when on, new tasks over the limit queue and start automatically when a slot frees up.
 		ConcurrencyEnabled *bool `json:"task_concurrency_enabled"`
 		ConcurrencyLimit   *int  `json:"task_concurrency_limit"`
-		// LLM 轮询(故障转移)开关 + 「绑定配置失败也兜底回轮询链」开关。两者都需要
-		// 重建 provider 链才生效，走下面的 changed → applyLLM 路径。
+		// LLM rotation (failover) switch + "fall back to the rotation chain when a bound profile fails" switch. Both need
+		// the provider chain rebuilt to take effect, via the changed → applyLLM path below.
 		LLMPoolEnabled      *bool `json:"llm_pool_enabled"`
 		LLMPoolBindFallback *bool `json:"llm_pool_bind_fallback"`
-		// 操作约束注入范围开关(默认都开);即时生效(planner/worker 每轮读),无需重建 agent。
+		// Operating-constraint injection scope switches (all on by default); take effect immediately (planner/worker read them every round), no agent rebuild needed.
 		ConstraintsInjectPlanner *bool `json:"constraints_inject_planner"`
 		ConstraintsInjectWorker  *bool `json:"constraints_inject_worker"`
-		// 实验功能:noa 上下文压缩开关(默认关);每 run 读,对之后启动的 run 生效,无需重建 agent。
+		// Experimental: noa context compaction switch (off by default); read per run, applies to runs started afterwards, no agent rebuild needed.
 		NoaCompaction *bool `json:"noa_compaction"`
-		// 漏洞 IM 推送的全局项。三者都由投递引擎每轮读一次，改完即时生效，
-		// 不需要重建 agent 或重启。
+		// Global settings for finding IM notifications. All three are read by the delivery engine every round, so changes take effect immediately
+		// without rebuilding agents or restarting.
 		NotifyEnabled    *bool   `json:"notify_enabled"`
 		NotifyBaseURL    *string `json:"notify_public_base_url"`
 		NotifyDigestMins *int    `json:"notify_digest_interval_min"`
@@ -139,11 +139,11 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.CompletionReviewSeconds != nil && (*req.CompletionReviewSeconds < 15 || *req.CompletionReviewSeconds > 900) {
-		writeErr(w, 400, "终验预算须为 15–900 秒")
+		writeErr(w, 400, "final verification budget must be 15–900 seconds")
 		return
 	}
 	if req.CompletionReviewTurns != nil && (*req.CompletionReviewTurns < 1 || *req.CompletionReviewTurns > 64) {
-		writeErr(w, 400, "终验轮数须为 1–64")
+		writeErr(w, 400, "final verification rounds must be 1–64")
 		return
 	}
 	for key, value := range map[string]*int{settingCompletionReviewSeconds: req.CompletionReviewSeconds, settingCompletionReviewTurns: req.CompletionReviewTurns} {
@@ -172,13 +172,13 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.NoaCompaction != nil {
-		// 每 run 读的解析器,切换即时对之后启动的 run 生效,无需 applyLLM 重建。
+		// Resolver read per run; switching applies immediately to runs started afterwards, no applyLLM rebuild needed.
 		if err := s.m.SetNoaCompaction(*req.NoaCompaction); err != nil {
 			writeErr(w, 500, err.Error())
 			return
 		}
 	}
-	// 推送全局项:投递引擎每轮重新读取,所以即时生效、无需重启。
+	// Global notification settings: the delivery engine rereads them every round, so they take effect immediately without a restart.
 	if req.NotifyEnabled != nil {
 		if err := s.m.pg.SetBool(settingNotifyEnabled, *req.NotifyEnabled); err != nil {
 			writeErr(w, 500, err.Error())
@@ -186,11 +186,11 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.NotifyBaseURL != nil {
-		// 统一裁掉尾部斜杠:回链拼接用的是 fmt.Sprintf("%s/function/..."),
-		// 留着尾部斜杠会产出 "//function/..." 这种双斜杠路径。
+		// Always trim the trailing slash: backlinks are built with fmt.Sprintf("%s/function/..."),
+		// and a trailing slash would produce double-slash paths like "//function/...".
 		base := trimTrailingSlash(strings.TrimSpace(*req.NotifyBaseURL))
 		if base != "" && !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
-			writeErr(w, 400, "回链地址需以 http:// 或 https:// 开头")
+			writeErr(w, 400, "backlink URL must start with http:// or https://")
 			return
 		}
 		if err := s.m.pg.SetSetting(settingNotifyPublicBaseURL, base); err != nil {
@@ -199,9 +199,9 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.NotifyDigestMins != nil {
-		// 下限 1 分钟:更短的周期等于实时推送,那样应该直接把渠道改成 realtime 模式。
+		// Floor of 1 minute: a shorter interval is effectively real-time push, in which case the channel should simply switch to realtime mode.
 		if *req.NotifyDigestMins < 1 || *req.NotifyDigestMins > 24*60 {
-			writeErr(w, 400, "汇总周期需在 1 到 1440 分钟之间")
+			writeErr(w, 400, "digest interval must be between 1 and 1440 minutes")
 			return
 		}
 		if err := s.m.pg.SetSetting(settingNotifyDigestMinutes, strconv.Itoa(*req.NotifyDigestMins)); err != nil {
@@ -216,7 +216,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.ConcurrencyEnabled != nil || req.ConcurrencyLimit != nil {
-		// 部分 PUT:未给的字段用当前值兜底,避免只改一个把另一个重置。
+		// Partial PUT: missing fields fall back to the current values, so changing one doesn't reset the other.
 		curOn, curLimit := s.m.ConcurrencyLimit()
 		if curLimit == 0 {
 			curLimit = defaultConcurrencyLimit
@@ -232,7 +232,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 400, err.Error())
 			return
 		}
-		// 立即协调一次:关闭时放行全部排队,调高上限时补位启动,不必等下一个 tick。
+		// Reconcile immediately: when disabled release everything queued, when the limit is raised start queued tasks, without waiting for the next tick.
 		go s.reconcileConcurrency()
 	}
 	if req.PythonInterp != nil {
@@ -242,7 +242,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.LLMRecord != nil {
-		// 录制器每次调用读取该标志，切换即时生效，无需 applyLLM 重建。
+		// The recorder reads this flag on every call, so switching takes effect immediately without an applyLLM rebuild.
 		if err := s.m.SetLLMRecordEnabled(*req.LLMRecord); err != nil {
 			writeErr(w, 500, err.Error())
 			return
@@ -355,14 +355,14 @@ func (s *Server) testWebSearch(w http.ResponseWriter, r *http.Request) {
 	cfg := actool.WebSearchConfig{Backend: backend, BraveAPIKey: braveKey, TavilyAPIKey: tavilyKey, Proxy: proxy}
 	// Hard cap so a slow/blocked proxy can't hang the request.
 	wall := 30 * time.Second
-	// deepseek 的凭据不在表单里，来自当前激活的 LLM 配置；同时它每次搜索都跑一次
-	// 模型推理，30s 的通用上限偏紧，单独放宽。这里不预判配置能不能用——测这一下
-	// 本来就是给用户自己确认的手段，真跑不通时下面的报错比预判更有信息量。
+	// deepseek's credentials are not in the form; they come from the currently active LLM profile. It also runs model inference
+	// on every search, so the generic 30s cap is too tight and gets relaxed here. We don't pre-check whether the config works: this test
+	// is exactly how users confirm it themselves, and the error below is more informative than a pre-check when it really fails.
 	probeQuery := "test"
 	if strings.TrimSpace(backend) == deepSeekWebSearchBackend {
 		cfg.DeepSeekBaseURL, cfg.DeepSeekAPIKey, cfg.DeepSeekModel = s.m.deepSeekSearchCreds()
 		wall = 120 * time.Second
-		// 搜索词由 DeepSeek 端的模型自行决定，"test" 太空泛会让它跳过搜索直接作答。
+		// The DeepSeek-side model decides the search query itself; "test" is too vague and makes it answer without searching.
 		probeQuery = "DeepSeek company official website"
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), wall)
@@ -373,7 +373,7 @@ func (s *Server) testWebSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(results) == 0 {
-		writeJSON(w, 200, map[string]any{"ok": false, "error": "搜索返回 0 条结果（可能被限流或代理不通）", "backend": backend})
+		writeJSON(w, 200, map[string]any{"ok": false, "error": "search returned 0 results (possibly rate limited or the proxy is unreachable)", "backend": backend})
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true, "count": len(results), "backend": backend})

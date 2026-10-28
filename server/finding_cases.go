@@ -45,7 +45,7 @@ func caseHTTPError(w http.ResponseWriter, err error) {
 func decodeCaseRequest(w http.ResponseWriter, r *http.Request, a any) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(a); err != nil {
-		writeErr(w, 400, "无效请求正文")
+		writeErr(w, 400, "invalid request body")
 		return false
 	}
 	return true
@@ -94,18 +94,18 @@ func (s *Server) findingCaseAccess(w http.ResponseWriter, r *http.Request, mutat
 		return nil, false
 	}
 	if c == nil {
-		writeErr(w, 404, "漏洞组不存在")
+		writeErr(w, 404, "finding case not found")
 		return nil, false
 	}
 	if ctx := r.URL.Query().Get("context_task"); ctx != "" {
 		t := s.m.ResolveTask(ctx)
 		_, inherited, allowed := findingProvenanceInTask(t, c.TaskID)
 		if !allowed {
-			writeErr(w, 404, "任务中没有该漏洞组")
+			writeErr(w, 404, "the task has no such finding case")
 			return nil, false
 		}
 		if mutation && inherited {
-			writeErr(w, 403, "继承漏洞组只读")
+			writeErr(w, 403, "inherited finding cases are read-only")
 			return nil, false
 		}
 	}
@@ -159,7 +159,7 @@ func (s *Server) removeFindingCaseMember(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if strings.TrimSpace(body.Reason) == "" {
-		body.Reason = "人工移出归并组"
+		body.Reason = "manually removed from the merged case"
 	}
 	if err := s.m.pg.RemoveFindingCaseMember(r.Context(), c.ID, fid, body.Reason); err != nil {
 		caseHTTPError(w, err)
@@ -230,17 +230,17 @@ func (s *Server) updateCaseReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) findingCaseTools() []actool.CoreTool {
-	props := map[string]any{"finding_id": idParam("独立 findings 记录 ID，不是探索节点 ID"), "finding_ids": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "独立漏洞记录 ID 列表"}, "task_id": idParam("同一来源任务 ID"), "case_id": idParam("归并组 ID"), "version": idParam("get_finding_case 实际读取的 version"), "page": idParam("分页，从1开始，每页20条"), "title": strParam("同一实际缺陷的名称"), "reason": strParam("具体证据与归并理由，不能仅类型相同"), "report": strParam("全部成员证据的完整统一 Markdown 报告"), "severity": strParam("critical|high|medium|low"), "severity_reason": strParam("基于已验证影响的评级依据，不直接取最高等级")}
+	props := map[string]any{"finding_id": idParam("Standalone findings record ID, not the exploration node ID"), "finding_ids": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "List of standalone finding record IDs"}, "task_id": idParam("ID of the shared source task"), "case_id": idParam("Finding case ID"), "version": idParam("The version actually read by get_finding_case"), "page": idParam("Page number, starting at 1, 20 per page"), "title": strParam("Name of the single underlying defect"), "reason": strParam("Concrete evidence and reason for merging; the same type alone is not enough"), "report": strParam("Complete unified Markdown report covering all members' evidence"), "severity": strParam("critical|high|medium|low"), "severity_reason": strParam("Rating rationale based on verified impact; do not simply take the highest level")}
 	specs := []struct {
 		name, desc string
 		required   []string
 	}{
-		{"search_finding_duplicates", "只读检索同任务候选，返回摘要与资产；等级不同也可能重复。支持分页，按需读取详情。", []string{"finding_id"}},
-		{"get_finding_record", "读取独立漏洞完整原始证据和报告，返回探索节点编号以便追溯执行记录。", []string{"finding_id"}},
-		{"merge_finding_records", "证据明确证明同一缺陷时归并；保留所有原始记录。不跨任务、不改变原评级，不可绕过人工否决。", []string{"task_id", "finding_ids", "title", "reason"}},
-		{"suggest_finding_merge", "证据不足时提交疑似重复建议，待人工确认；不是自动合并。只允许两条同任务记录。", []string{"task_id", "finding_ids", "title", "reason"}},
-		{"get_finding_case", "读取归并组和成员分页。先记录version，再读取成员的原报告、证据及流量；版本变化必须重新读取。", []string{"case_id"}},
-		{"update_finding_case_report", "保存统一报告及评级理由，version必须来自实际读取。保留各条原报告，不新建漏洞。", []string{"case_id", "version", "title", "report", "severity", "severity_reason"}},
+		{"search_finding_duplicates", "Read-only search for candidates in the same task; returns summaries and assets. Findings with different severities may still be duplicates. Paginated; read details as needed.", []string{"finding_id"}},
+		{"get_finding_record", "Read a standalone finding's complete raw evidence and report; returns the exploration node number so execution records can be traced.", []string{"finding_id"}},
+		{"merge_finding_records", "Merge when the evidence clearly proves the same defect; all original records are kept. Does not cross tasks, does not change the original ratings, and cannot override a human veto.", []string{"task_id", "finding_ids", "title", "reason"}},
+		{"suggest_finding_merge", "When evidence is insufficient, submit a suspected-duplicate suggestion for human confirmation; this is not an automatic merge. Only two records from the same task are allowed.", []string{"task_id", "finding_ids", "title", "reason"}},
+		{"get_finding_case", "Read a finding case and a page of its members. Note the version first, then read the members' original reports, evidence and traffic; if the version changes you must read again.", []string{"case_id"}},
+		{"update_finding_case_report", "Save the unified report and rating rationale; version must come from an actual read. Each original report is kept and no new finding is created.", []string{"case_id", "version", "title", "report", "severity", "severity_reason"}},
 	}
 	out := []actool.CoreTool{}
 	for _, spec := range specs {
@@ -293,7 +293,7 @@ func (s *Server) performFindingCaseTool(ctx context.Context, name string, a find
 			return nil, err
 		}
 		if f == nil {
-			return nil, errors.New("漏洞不存在")
+			return nil, errors.New("finding not found")
 		}
 		dto := s.caseFindingDTO(f)
 		cid, err := s.m.pg.FindingCaseID(f.ID)
@@ -310,7 +310,7 @@ func (s *Server) performFindingCaseTool(ctx context.Context, name string, a find
 	case "suggest_finding_merge":
 		ids := a.ids()
 		if len(ids) != 2 {
-			return nil, errors.New("疑似重复建议需要两条记录")
+			return nil, errors.New("a suspected-duplicate suggestion needs two records")
 		}
 		id, err := s.m.pg.SuggestFindingCase(ctx, parseProfileID(a.TaskID), ids[0], ids[1], a.Title, a.Reason)
 		return map[string]string{"suggestion_id": i64s(id)}, err
@@ -320,7 +320,7 @@ func (s *Server) performFindingCaseTool(ctx context.Context, name string, a find
 			return nil, err
 		}
 		if c == nil {
-			return nil, errors.New("漏洞组不存在")
+			return nil, errors.New("finding case not found")
 		}
 		fs, total, err := s.m.pg.FindingCaseMembers(cid, page, 20)
 		members := []FindingDTO{}
@@ -332,13 +332,13 @@ func (s *Server) performFindingCaseTool(ctx context.Context, name string, a find
 		err := s.m.pg.UpdateFindingCaseReport(ctx, cid, a.Version, a.Title, a.Report, a.Severity, a.SeverityReason)
 		return map[string]bool{"ok": err == nil}, err
 	}
-	return nil, errors.New("未知归并工具")
+	return nil, errors.New("unknown merge tool")
 }
 func idParam(desc string) map[string]any {
 	return map[string]any{"type": "integer", "description": desc}
 }
 func (s *Server) seedFindingCaseTools() {
-	_, _ = s.m.pg.Exec(`UPDATE finding_case_review_runs SET state='failed',error='服务重启中断，请重新提交整理' WHERE state IN ('queued','running')`)
+	_, _ = s.m.pg.Exec(`UPDATE finding_case_review_runs SET state='failed',error='interrupted by a service restart, please submit the review again' WHERE state IN ('queued','running')`)
 	a, err := s.m.pg.GetAgentByKey("reporter")
 	if err != nil || a == nil {
 		return
@@ -369,11 +369,11 @@ func (s *Server) reviewFindingCases(w http.ResponseWriter, r *http.Request) {
 	if cid := parseProfileID(a.CaseID); cid > 0 {
 		c, err := s.m.pg.GetFindingCase(cid)
 		if err != nil || c == nil || !c.Active {
-			writeErr(w, 400, "漏洞组不可用")
+			writeErr(w, 400, "finding case unavailable")
 			return
 		}
 		if ctx := r.URL.Query().Get("context_task"); ctx != "" && (c.TaskID == nil || ctx != i64s(*c.TaskID)) {
-			writeErr(w, 403, "继承漏洞组只读")
+			writeErr(w, 403, "inherited finding cases are read-only")
 			return
 		}
 		fs, _, err := s.m.pg.FindingCaseMembers(cid, 1, 100000)
@@ -387,7 +387,7 @@ func (s *Server) reviewFindingCases(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if len(ids) == 0 || (len(a.CaseID) == 0 && len(ids) > 200) {
-		writeErr(w, 400, "请选择1至200条原始上报")
+		writeErr(w, 400, "select 1 to 200 original reports")
 		return
 	}
 	runs, err := s.queueFindingCaseReview(ids)
@@ -406,7 +406,7 @@ func (s *Server) queueFindingCaseReview(ids []int64) ([]map[string]any, error) {
 		return nil, err
 	}
 	if reporter == nil || !reporter.Enabled || s.chatAgentRef() == nil {
-		return nil, errors.New("报告 Agent 未启用或模型不可用")
+		return nil, errors.New("report agent is not enabled or the model is unavailable")
 	}
 	batches := map[int64][]int64{}
 	seen := map[int64]bool{}
@@ -420,28 +420,28 @@ func (s *Server) queueFindingCaseReview(ids []int64) ([]map[string]any, error) {
 			return nil, err
 		}
 		if f == nil || f.TaskID == nil {
-			return nil, errors.New("所选漏洞来源任务不可用")
+			return nil, errors.New("source task of the selected findings is unavailable")
 		}
 		batches[*f.TaskID] = append(batches[*f.TaskID], fid)
 	}
 	// Validate all sources before scheduling any work.
 	for taskID := range batches {
 		if _, ok := s.m.Task(i64s(taskID)); !ok {
-			return nil, errors.New("任务不可用")
+			return nil, errors.New("task unavailable")
 		}
 	}
 	runs := []map[string]any{}
 	for taskID, fids := range batches {
 		t, ok := s.m.Task(i64s(taskID))
 		if !ok {
-			return nil, errors.New("任务不可用")
+			return nil, errors.New("task unavailable")
 		}
 		raw, err := json.Marshal(fids)
 		if err != nil {
 			return nil, err
 		}
-		msg := fmt.Sprintf("所选报告整理：仅允许处理本任务所选 finding_ids=%s。先保留/生成各条独立报告，再在所选范围内判断同一缺陷，明确则自动归并并更新统一报告。不确定保留独立报告，可提交疑似重复建议供后续审核，但不得等待人工确认或阻塞报告生成。已成组则读取全部成员和实际版本再生成统一报告。不得归并未选择的记录，不探测目标。", raw)
-		c, err := s.m.pg.CreateConversation("reporter", "漏洞整理 · task#"+t.ID, nil)
+		msg := fmt.Sprintf("Selected report review: only process the selected finding_ids=%s of this task. First keep/generate each standalone report, then judge within the selection whether they are the same defect; if clear, merge automatically and update the unified report. If unsure, keep the standalone reports; you may submit a suspected-duplicate suggestion for later review, but you must not wait for human confirmation or block report generation. If already grouped, read all members and their actual versions before generating the unified report. Do not merge unselected records and do not probe targets.", raw)
+		c, err := s.m.pg.CreateConversation("reporter", "Finding review · task#"+t.ID, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -472,7 +472,7 @@ func (s *Server) queueFindingCaseReport(id int64) ([]map[string]any, error) {
 		ids = append(ids, member.ID)
 	}
 	if len(ids) == 0 {
-		return nil, errors.New("漏洞组没有可用成员")
+		return nil, errors.New("finding case has no usable members")
 	}
 	return s.queueFindingCaseReview(ids)
 }
@@ -532,7 +532,7 @@ func (s *Server) checkCaseReviewScope(ctx context.Context, name string, a findin
 		}
 		for _, id := range checkIDs {
 			if !allowed[id] {
-				return errors.New("人工整理只能归并所选记录")
+				return errors.New("manual review can only merge the selected records")
 			}
 		}
 	case "update_finding_case_report":
@@ -547,7 +547,7 @@ func (s *Server) checkCaseReviewScope(ctx context.Context, name string, a findin
 			}
 		}
 		if !found {
-			return errors.New("该漏洞组不属于人工所选范围")
+			return errors.New("this finding case is outside the manually selected scope")
 		}
 	}
 	return nil

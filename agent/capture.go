@@ -15,7 +15,7 @@ import (
 	"github.com/Autumn-27/norma/llm"
 )
 
-var errEmptyModelResponse = errors.New("本轮模型未返回可用文本或工具调用；请检查模型配置、接口格式与 LLM 录制原文")
+var errEmptyModelResponse = errors.New("the model returned no usable text or tool call this round; check the model configuration, API format and the raw LLM recording")
 
 // captureRun drives one agent turn-to-completion over Session.Prompt and emits a
 // coalesced ActivityRecord per execution step (tool_use / tool_result / text /
@@ -89,7 +89,7 @@ func captureRunSession(ctx context.Context, s *agentcore.Session, input string, 
 				rec(activityWithUsage(db.Activity{Kind: "result", Summary: firstLine(sum, 400), Detail: detail}, lastUsage))
 				return finalText, reason, ctx.Err()
 			}
-			rec(activityWithUsage(db.Activity{Kind: "result", IsError: true, Summary: "执行出错: " + err.Error(), Detail: err.Error()}, lastUsage))
+			rec(activityWithUsage(db.Activity{Kind: "result", IsError: true, Summary: "execution error: " + err.Error(), Detail: err.Error()}, lastUsage))
 			return finalText, reason, err
 		}
 		switch ev.Kind {

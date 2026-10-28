@@ -9,8 +9,8 @@ import (
 
 func (t *ToolSet) listRemainingWork() actool.CoreTool {
 	return t.readExpTool("list_remaining_work",
-		"分页列出本任务所有非 done 意图，包括 open/running/paused/blocked/exhausted/stopped/deleted，返回总数及停止/受阻原因。收官前必须逐页核查：has_more=true 时用 next_after 作为下一次 after，直到 has_more=false。旧意图不会因概览截断而遗漏；必要工作仍须完成，只有重复或无关工作才可提交 remaining_work 停止理由。",
-		obj(map[string]any{"after": intp("上一页的 next_after；首页省略或填 0"), "limit": intp("每页数量，默认 100，最大 200")}),
+		"Page through every non-done intent of this task, including open/running/paused/blocked/exhausted/stopped/deleted, returning the total and the stop/blocked reasons. Before wrapping up you must check page by page: when has_more=true use next_after as the next after, until has_more=false. Old intents won't be missed because of overview truncation; required work must still be completed, and only duplicate or irrelevant work may be stopped by submitting remaining_work stop reasons.",
+		obj(map[string]any{"after": intp("next_after of the previous page; omit or 0 for the first page"), "limit": intp("items per page, default 100, max 200")}),
 		func(ctx context.Context, in json.RawMessage) (actool.Result, error) {
 			var args struct {
 				After int64 `json:"after"`

@@ -45,7 +45,7 @@ func TestEmptyModelRunCannotCompleteTask(t *testing.T) {
 			if a.Kind == "result" && !a.IsError {
 				t.Fatalf("empty run recorded as success: %+v", a)
 			}
-			if a.Kind == "result" && !strings.Contains(a.Summary, "未返回") {
+			if a.Kind == "result" && !strings.Contains(a.Summary, "returned no") {
 				t.Fatalf("empty run omitted its diagnostic: %+v", a)
 			}
 		}

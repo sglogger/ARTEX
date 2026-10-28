@@ -1,11 +1,11 @@
 import type { SSSyncResult, SSSyncStatus } from "./types.ts";
 
 export const syncStatusLabels: Record<SSSyncStatus, string> = {
-  running: "同步中",
-  success: "成功",
-  partial: "部分成功",
-  failed: "失败",
-  interrupted: "已中断",
+  running: "Syncing",
+  success: "Succeeded",
+  partial: "Partially succeeded",
+  failed: "Failed",
+  interrupted: "Interrupted",
 };
 
 // Retain truthful feedback when connected to an older backend without status.

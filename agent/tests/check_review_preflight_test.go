@@ -15,7 +15,7 @@ func TestGoalReviewRejectsKnownIncompleteBeforeModel(t *testing.T) {
 	payload, _ := json.Marshal(map[string]any{"checkpoint": checkpoint})
 	snapshot := db.GoalProofSnapshot{Goal: &db.Node{Payload: json.RawMessage(`{"goal_type":"inspection"}`)}, Evidence: &db.Node{Payload: payload}}
 	verdict, err := NewGoalProofReviewer(nil)(t.Context(), snapshot, "saved interruption is not complete")
-	if err != nil || verdict.Supported == nil || *verdict.Supported || !strings.Contains(verdict.Reason, "缺口") {
+	if err != nil || verdict.Supported == nil || *verdict.Supported || !strings.Contains(verdict.Reason, "gaps") {
 		t.Fatal(verdict, err)
 	}
 }

@@ -100,9 +100,9 @@ func TestCheckHandoffLive(t *testing.T) {
 			measured := &liveMeasuredProvider{Provider: provider}
 			d := testDB(t)
 			t.Cleanup(func() { _ = d.Close() })
-			goalType, goal := "inspection", "完成固定两项授权候选的登录检查，保存实际覆盖；若全部失败可用有范围的阴性结论完成。"
+			goalType, goal := "inspection", "Complete the login check of the two fixed authorized candidates and save the actual coverage; if all fail, it can be completed with a scoped negative conclusion."
 			if scenario == "positive" {
-				goalType, goal = "outcome", "取得 fixture-user 的有效身份，并用认证后的 /me 读取证明身份。"
+				goalType, goal = "outcome", "Obtain a valid identity for fixture-user and prove the identity with an authenticated /me read."
 			}
 			task, err := d.CreateTask("isolated live "+scenario, goal, nil, 0, 0)
 			if err != nil {
@@ -110,7 +110,7 @@ func TestCheckHandoffLive(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = d.DeleteTask(task.ID) })
 			es := d.Exploration(task.ExplorationID)
-			g, err := es.AddGoal(map[string]any{"text": goal, "goal_type": goalType, "required_checks": []string{"仅 cand-a、cand-b 两项；授权尝试上限2；HTTP 200 不代表成功；保存未执行项与中断原因"}}, "human")
+			g, err := es.AddGoal(map[string]any{"text": goal, "goal_type": goalType, "required_checks": []string{"only the two items cand-a and cand-b; authorized attempt limit 2; HTTP 200 does not mean success; save unexecuted items and interruption reasons"}}, "human")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -143,7 +143,7 @@ func TestCheckHandoffLive(t *testing.T) {
 				fmt.Fprint(w, `{"success":false,"error":"invalid_candidate"}`)
 			}))
 			t.Cleanup(fixture.Close)
-			payload := map[string]any{"summary": "在隔离登录夹具完成两项固定授权候选检查。只用 fixture_login；不得外网/命令探测。工具 cand-a/cand-b 是固定候选引用，不含真实口令。每次尝试后立即用 record_fact.checkpoint 保存 request=POST /login JSON candidate，budget=2，完整 candidates（failed/remaining/verified）；success 后用工具返回的 /me 响应保存 identity 和 identity_evidence。HTTP200但success=false就是失败。429 停止，未执行项保留 remaining，result=blocked 且保存 gaps/barrier/next_action。两项均失败只能说明本集合阴性。不要重试已执行候选。", "check": map[string]any{"target": fixture.URL + "/login", "mechanism": "authentication"}, "check_key": "fixture-auth"}
+			payload := map[string]any{"summary": "Complete the check of the two fixed authorized candidates on the isolated login fixture. Use only fixture_login; no internet/command probing. The tool's cand-a/cand-b are fixed candidate references and contain no real passwords. After each attempt immediately save with record_fact.checkpoint request=POST /login JSON candidate, budget=2, the full candidates (failed/remaining/verified); after success save identity and identity_evidence from the /me response returned by the tool. HTTP 200 with success=false is a failure. Stop on 429, keep unexecuted items as remaining, result=blocked and save gaps/barrier/next_action. Both failing only shows this set is negative. Don't retry candidates already executed.", "check": map[string]any{"target": fixture.URL + "/login", "mechanism": "authentication"}, "check_key": "fixture-auth"}
 			iid, err := es.AddIntent(payload, 5, nil, "human")
 			if err != nil {
 				t.Fatal(err)
@@ -155,7 +155,7 @@ func TestCheckHandoffLive(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			loginTool := actool.Build(actool.Spec{Name: "fixture_login", Description: "仅测试固定授权候选 cand-a/cand-b。POST /login JSON candidate；返回状态与业务响应，成功时追加 GET /me 的身份读取。先读原检查点，执行后立刻保存检查点。遇429停止。", Schema: obj(map[string]any{"candidate": str("固定候选引用 cand-a/cand-b")}, "candidate"), Run: func(ctx context.Context, input json.RawMessage, _ *actool.ToolContext) (actool.Result, error) {
+			loginTool := actool.Build(actool.Spec{Name: "fixture_login", Description: "Tests only the fixed authorized candidates cand-a/cand-b. POST /login JSON candidate; returns the status and business response, and on success appends the identity read from GET /me. Read the original checkpoint first and save the checkpoint immediately after executing. Stop on 429.", Schema: obj(map[string]any{"candidate": str("fixed candidate reference cand-a/cand-b")}, "candidate"), Run: func(ctx context.Context, input json.RawMessage, _ *actool.ToolContext) (actool.Result, error) {
 				var args struct {
 					Candidate string `json:"candidate"`
 				}

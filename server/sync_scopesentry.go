@@ -13,18 +13,18 @@ import (
 	"github.com/Autumn-27/artex/mcphttp"
 )
 
-// 资产同步（ScopeSentry 数据源）。
+// Asset sync (ScopeSentry data source).
 //
-// ScopeSentry 是一个 ASM 资产测绘平台，通过其 MCP 接口按【项目】/【任务】两个维度
-// 拉取子域名、Web 应用、服务等资产，映射为 ARTEX 的公司 + 资产模型。数据源本身是
-// 一个名为 "ScopeSentry" 的 http 传输 MCP 行（url + X-API-Key 头保存在 mcp_servers）。
+// ScopeSentry is an ASM asset discovery platform; through its MCP interface we pull subdomains, web apps, services and other assets
+// along two dimensions, [project] and [task], and map them to ARTEX's company + asset model. The data source itself is
+// an http-transport MCP row named "ScopeSentry" (url + X-API-Key header stored in mcp_servers).
 //
-// 与 agent 工具层不同，这里用 mcphttp.Client.Call 直接调用 MCP 工具、拿原始 JSON，
-// 不触发 AskUser 权限弹窗（后台批量同步）。
+// Unlike the agent tool layer, this calls MCP tools directly with mcphttp.Client.Call to get raw JSON,
+// without triggering the AskUser permission prompt (background batch sync).
 
 const (
 	scopeSentryMCPName = "ScopeSentry"
-	syncMaxPerType     = 5000 // 单目标单类型的入库保护上限
+	syncMaxPerType     = 5000 // safety cap on stored items per target per type
 	syncDefaultPage    = 100
 )
 
@@ -50,10 +50,10 @@ func (s *Server) scopeSentryClient(ctx context.Context) (*mcphttp.Client, error)
 		return nil, err
 	}
 	if m == nil {
-		return nil, fmt.Errorf("数据源 %s 不存在，请先创建", scopeSentryMCPName)
+		return nil, fmt.Errorf("data source %s does not exist; create it first", scopeSentryMCPName)
 	}
 	if m.URL == "" {
-		return nil, fmt.Errorf("数据源 %s 未配置 URL，请先配置", scopeSentryMCPName)
+		return nil, fmt.Errorf("data source %s has no URL configured; configure it first", scopeSentryMCPName)
 	}
 	return mcphttp.New(ctx, m.Name, m.URL, jsonStrMap(m.Env), m.Insecure)
 }
@@ -185,7 +185,7 @@ func (s *Server) syncSSProjects(w http.ResponseWriter, r *http.Request) {
 	}
 	text, err := cl.Call(ctx, "list_projects_data", args)
 	if err != nil {
-		writeErr(w, 502, "list_projects_data 失败: "+err.Error())
+		writeErr(w, 502, "list_projects_data failed: "+err.Error())
 		return
 	}
 	// {result:{All:[{id,name,logo,AssetCount,tag}], <tag>:[...]}, tag:{...}}
@@ -194,7 +194,7 @@ func (s *Server) syncSSProjects(w http.ResponseWriter, r *http.Request) {
 		Tag    map[string]int             `json:"tag"`
 	}
 	if err := json.Unmarshal([]byte(text), &env); err != nil {
-		writeErr(w, 502, "解析项目列表失败: "+err.Error())
+		writeErr(w, 502, "failed to parse project list: "+err.Error())
 		return
 	}
 	projects := json.RawMessage("[]")
@@ -228,14 +228,14 @@ func (s *Server) syncSSTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	text, err := cl.Call(ctx, "list_tasks", args)
 	if err != nil {
-		writeErr(w, 502, "list_tasks 失败: "+err.Error())
+		writeErr(w, 502, "list_tasks failed: "+err.Error())
 		return
 	}
 	var env struct {
 		List json.RawMessage `json:"list"`
 	}
 	if err := json.Unmarshal([]byte(text), &env); err != nil {
-		writeErr(w, 502, "解析任务列表失败: "+err.Error())
+		writeErr(w, 502, "failed to parse task list: "+err.Error())
 		return
 	}
 	tasks := env.List

@@ -49,23 +49,23 @@ func completionReport(c *db.TaskCompletion) string {
 		return ""
 	}
 	var text strings.Builder
-	fmt.Fprintf(&text, "\n\n## 任务收官记录\n\n- 阶段：%s\n- 原因：%s\n", out.Phase, out.Reason)
+	fmt.Fprintf(&text, "\n\n## Task completion record\n\n- Phase: %s\n- Reason: %s\n", out.Phase, out.Reason)
 	if out.FailureKind != "" {
-		fmt.Fprintf(&text, "- 复核失败：%s（%d 次）；恢复动作：%s\n", out.FailureKind, out.FailureCount, out.RecoveryAction)
+		fmt.Fprintf(&text, "- Review failure: %s (%d times); recovery action: %s\n", out.FailureKind, out.FailureCount, out.RecoveryAction)
 	}
 	for _, recovery := range out.RecoveryHistory {
-		fmt.Fprintf(&text, "- 恢复记录：%s，%s，%s（原失败 %s/%d 次）\n", recovery.At.Format(time.RFC3339), recovery.Actor, recovery.Reason, recovery.FailureKind, recovery.FailureCount)
+		fmt.Fprintf(&text, "- Recovery record: %s, %s, %s (original failure %s/%d times)\n", recovery.At.Format(time.RFC3339), recovery.Actor, recovery.Reason, recovery.FailureKind, recovery.FailureCount)
 	}
 	if out.Review != "" {
 		fmt.Fprintf(&text, "\n%s\n", out.Review)
 	}
 	for _, gap := range out.GoalGaps {
-		fmt.Fprintf(&text, "- 目标 #%d 证据缺口（版本 %d）：%s\n", gap.GoalID, gap.ExpectedVersion, gap.Reason)
+		fmt.Fprintf(&text, "- Goal #%d evidence gap (version %d): %s\n", gap.GoalID, gap.ExpectedVersion, gap.Reason)
 	}
 	if len(out.RemainingWork) > 0 {
-		text.WriteString("\n### 收官时剩余检查\n\n以下停止决定不代表检查验证通过。\n\n")
+		text.WriteString("\n### Remaining checks at completion\n\nThe stop decisions below do not mean the checks passed.\n\n")
 		for _, work := range out.RemainingWork {
-			fmt.Fprintf(&text, "- #%d %s（原状态 %s）：%s\n", work.IntentID, work.Summary, work.State, work.Reason)
+			fmt.Fprintf(&text, "- #%d %s (original state %s): %s\n", work.IntentID, work.Summary, work.State, work.Reason)
 		}
 	}
 	return text.String()

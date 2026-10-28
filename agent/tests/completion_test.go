@@ -189,20 +189,20 @@ func TestReviewCompletionCancellationInvalidatesEarlierVerdict(t *testing.T) {
 func TestBuildReviewInputPreservesCriticalDataAndBoundsEvidence(t *testing.T) {
 	var nodes, edges, work []map[string]any
 	for id := 1; id <= 150; id++ {
-		nodes = append(nodes, map[string]any{"id": id, "exploration_id": 7, "kind": "goal", "state": "met", "payload": map[string]any{"text": fmt.Sprintf("完整目标 %d，不得截断", id)}})
+		nodes = append(nodes, map[string]any{"id": id, "exploration_id": 7, "kind": "goal", "state": "met", "payload": map[string]any{"text": fmt.Sprintf("full goal %d, must not be truncated", id)}})
 		edges = append(edges, map[string]any{"src_id": 5000, "dst_id": id, "rel": "proves"})
 	}
 	for id := 5000; id < 5100; id++ {
-		nodes = append(nodes, map[string]any{"id": id, "exploration_id": 7, "kind": "fact", "state": "done", "payload": map[string]any{"text": strings.Repeat("证据详情", 5000)}})
+		nodes = append(nodes, map[string]any{"id": id, "exploration_id": 7, "kind": "fact", "state": "done", "payload": map[string]any{"text": strings.Repeat("evidence detail", 5000)}})
 	}
 	nodes = append(nodes, map[string]any{"id": 9000, "exploration_id": 99, "kind": "goal", "state": "open", "payload": map[string]any{"text": "source task goal"}})
 	for id := 200; id < 220; id++ {
-		work = append(work, map[string]any{"intent_id": id, "state": "blocked", "summary": fmt.Sprintf("完整剩余检查 %d", id), "kind": "duplicate", "reason": "已引用同范围成果", "reference_id": 5001})
+		work = append(work, map[string]any{"intent_id": id, "state": "blocked", "summary": fmt.Sprintf("full remaining check %d", id), "kind": "duplicate", "reason": "references a result of the same scope", "reference_id": 5001})
 	}
-	constraints := []map[string]any{{"exploration_id": 7, "text": "本任务操作边界：只读"}, {"exploration_id": 99, "text": "关联任务操作边界：不执行写入"}}
+	constraints := []map[string]any{{"exploration_id": 7, "text": "operating boundary of this task: read-only"}, {"exploration_id": 99, "text": "operating boundary of the linked task: no writes"}}
 	snapshot, err := json.Marshal(map[string]any{
 		"goals_met": true, "eligible": true, "remaining_work": work,
-		"data": map[string]any{"tasks": []map[string]any{{"id": 1, "goal": "原始任务目标", "description": "原始完整描述"}}, "nodes": nodes, "edges": edges, "constraints": constraints, "assets": []map[string]any{{"extra": strings.Repeat("DO_NOT_SEND_ASSET_BLOB", 100000)}}},
+		"data": map[string]any{"tasks": []map[string]any{{"id": 1, "goal": "original task goal", "description": "original full description"}}, "nodes": nodes, "edges": edges, "constraints": constraints, "assets": []map[string]any{{"extra": strings.Repeat("DO_NOT_SEND_ASSET_BLOB", 100000)}}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -222,7 +222,7 @@ func TestBuildReviewInputPreservesCriticalDataAndBoundsEvidence(t *testing.T) {
 	if err := json.Unmarshal(input, &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Task.Goal != "原始任务目标" || got.Task.Description != "原始完整描述" || len(got.Goals) != 150 || len(got.EvidenceReferences) != 170 {
+	if got.Task.Goal != "original task goal" || got.Task.Description != "original full description" || len(got.Goals) != 150 || len(got.EvidenceReferences) != 170 {
 		t.Fatalf("critical inputs lost: goals=%d refs=%d task=%+v", len(got.Goals), len(got.EvidenceReferences), got.Task)
 	}
 	for key, raw := range map[string]json.RawMessage{"remaining_work": got.RemainingWork, "constraints": got.Constraints} {
@@ -240,7 +240,7 @@ func TestBuildReviewInputPreservesCriticalDataAndBoundsEvidence(t *testing.T) {
 			t.Fatalf("%s was truncated or changed", key)
 		}
 	}
-	if len(got.EvidenceSummaries) > 12 || got.EvidenceOmitted != 100-len(got.EvidenceSummaries) || !strings.Contains(got.Notice, "采样") {
+	if len(got.EvidenceSummaries) > 12 || got.EvidenceOmitted != 100-len(got.EvidenceSummaries) || !strings.Contains(got.Notice, "sampled") {
 		t.Fatalf("sampling is not explicit: %+v", got)
 	}
 }
@@ -251,7 +251,7 @@ func TestReviewCompletionOversizedCriticalInputStopsBeforeModel(t *testing.T) {
 			var snapshot map[string]any
 			_ = json.Unmarshal(completionReviewFixture(), &snapshot)
 			data := snapshot["data"].(map[string]any)
-			long := strings.Repeat("不可截断", 3000)
+			long := strings.Repeat("not truncatable", 3000)
 			switch field {
 			case "goal":
 				data["tasks"].([]any)[0].(map[string]any)["goal"] = long
@@ -268,7 +268,7 @@ func TestReviewCompletionOversizedCriticalInputStopsBeforeModel(t *testing.T) {
 				t.Fatalf("small window budget=%d", planner.completionReviewLimit())
 			}
 			accepted, _, err := planner.ReviewCompletion(context.Background(), 1, new(db.DB).Exploration(7), encoded, nil)
-			if accepted || err == nil || calls != 0 || !strings.Contains(err.Error(), "未被截断") {
+			if accepted || err == nil || calls != 0 || !strings.Contains(err.Error(), "were not truncated") {
 				t.Fatalf("oversized critical input reached model: accepted=%v calls=%d err=%v", accepted, calls, err)
 			}
 		})

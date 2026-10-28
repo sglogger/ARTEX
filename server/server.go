@@ -56,11 +56,11 @@ type Server struct {
 	chatCancel map[string]context.CancelCauseFunc
 
 	// triggerQ buffers P3 trigger fires PER AGENT. A per-agent "pump" launches runs up
-	// to a concurrency limit derived from the agent's策略: serial → limit 1 (+ optional
+	// to a concurrency limit derived from the agent's policy: serial → limit 1 (+ optional
 	// merge); parallel → limit = trigger_max_parallel (0=∞), no merge. triggerActive
 	// counts in-flight runs per agent (replaces a boolean drain flag); a run's
 	// completion decrements it and re-pumps to fill the freed slot. triggerCfg caches
-	// the agent's last-read策略 so the pump never queries the DB while holding queueMu.
+	// the agent's last-read policy so the pump never queries the DB while holding queueMu.
 	// Distinct agents always run concurrently. Queue is in-memory (matches chatBusy); a
 	// restart drops pending fires — the scheduler re-fires from watermarks next tick.
 	queueMu       sync.Mutex
@@ -83,7 +83,7 @@ type Server struct {
 	provByProfile map[int64]*provEntry
 	provCacheGen  uint64
 
-	// llmHealth is the process-wide circuit-breaker state for LLM failover (轮询).
+	// llmHealth is the process-wide circuit-breaker state for LLM failover (rotation).
 	// It deliberately lives OUTSIDE the provider caches: rebuilding the chain
 	// (saving an unrelated profile, flipping a setting) must not erase what we
 	// learned about which backends are out of credit / rate-limited.
@@ -110,10 +110,10 @@ type triggeredRun struct {
 
 	agentKey  string
 	title     string
-	message   string // 事件正文(触发语 + 工具/入参/返回等);不含任务描述/目标头
+	message   string // event body (trigger phrase + tool/input/output etc.); excludes the task description/goal header
 	taskID    int64  // source task for finding/goal triggers; 0 for interval/none
-	taskDesc  string // 任务描述(任务级,同任务相同);合并时只渲染一次
-	taskGoal  string // 任务目标(任务级,同任务相同);合并时只渲染一次
+	taskDesc  string // task description (task-level, same within a task); rendered only once when merged
+	taskGoal  string // task goal (task-level, same within a task); rendered only once when merged
 	mergeable bool   // true for finding/goal event triggers (merge by taskID)
 }
 
@@ -132,8 +132,8 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 	if err := s.recoverSSSyncRuns(); err != nil {
 		log.Printf("[sync] recover interrupted runs: %v", err)
 	}
-	// 熔断阈值/冷却是失败路径上的热参数，启动时把全局重试策略推给 Registry 一次；
-	// 之后每次保存策略再推一次（saveLLMRetryPolicy）。
+	// Circuit breaker thresholds/cooldown are hot parameters on the failure path; push the global retry policy to the Registry once at startup,
+	// then again every time the policy is saved (saveLLMRetryPolicy).
 	s.applyRetryPolicy()
 	// Every task uses a stable task router. An empty explicit chain is resolved by
 	// that router through Agent bindings and then the global provider, so adding a
@@ -152,7 +152,7 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 		defer s.cfgMu.Unlock()
 		return s.llmOn
 	})
-	// Wire DB-stored prompt templates into the agents (新版方案 §3.3 / §5a). With no
+	// Wire DB-stored prompt templates into the agents (new design §3.3 / §5a). With no
 	// override row, agents keep their built-in defaults — behavior is unchanged.
 	if m.pg != nil {
 		agent.PromptOverride = func(key string) (string, bool) {
@@ -197,19 +197,19 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 			}
 			return a.TaskTimeoutWrapupMaxTurns, true
 		}
-		wireAgentAugment(m.pg, s.skillDir, s.hostTools) // 可见 skills/MCP + 流量/编排 host 工具装配进 agent 工具集
+		wireAgentAugment(m.pg, s.skillDir, s.hostTools) // wire visible skills/MCP + traffic/orchestration host tools into the agent toolsets
 		domainReg := buildDomainReg(m.Assets())
-		wireTools(m.pg, domainReg) // 内置工具表：按 agent 过滤 + 覆盖描述/schema + 注入默认值
-		seedPrompts(m.pg)          // 内置 agent 默认提示词正文播种进 agent_prompts(仅空时)
-		s.seedOrchestrationTools() // P2 跨任务编排工具 seed 进 tools 表(可按 agent 绑定)
+		wireTools(m.pg, domainReg) // built-in tool table: filter by agent + override description/schema + inject defaults
+		seedPrompts(m.pg)          // seed built-in agents' default prompt bodies into agent_prompts (only when empty)
+		s.seedOrchestrationTools() // seed P2 cross-task orchestration tools into the tools table (bindable per agent)
 		if err := s.seedFindingRetester(); err != nil {
 			log.Printf("[retester] seed: %v", err)
 		}
 		go s.evidenceStore().RunGC(s.ctx)
-		s.seedPythonInterpreter()     // 自定义脚本工具:开机检测 python 解释器入库(仅空时)
-		go newScheduler(s).Run(s.ctx) // P3 触发器调度(定时/finding/目标事件),仅自定义 agent
-		// 漏洞 IM 推送投递引擎。与 Scheduler 并列但独立：推送的实时性要求(3s)
-		// 与触发器的业务节奏不同，且两者失败互不牵连——推送卡住不该影响 agent 触发。
+		s.seedPythonInterpreter()     // custom script tools: detect the python interpreter at startup and persist it (only when empty)
+		go newScheduler(s).Run(s.ctx) // P3 trigger scheduling (cron/finding/goal events), custom agents only
+		// Finding IM notification delivery engine. Parallel to but independent of the Scheduler: notifications need real-time latency (3s)
+		// unlike the trigger business cadence, and their failures don't affect each other; a stuck notification shouldn't affect agent triggers.
 		go newNotifier(s).Run(s.ctx)
 		// Fill the tool cache for any enabled MCP that has none yet (notably the
 		// seeded browser MCP on first run). Async so it never blocks startup.
@@ -235,7 +235,7 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 	s.restoreTaskRuntimes()
 	go s.reconcileConcurrency()
 	s.startTaskArchiveWorker()
-	s.wireInterceptReviewer() // LLM 兜底审批:未命中拦截规则的命令交给模型判定
+	s.wireInterceptReviewer() // LLM fallback approval: commands that match no intercept rule are judged by the model
 	return s
 }
 
@@ -250,19 +250,19 @@ func (s *Server) restoreTaskRuntimes() {
 		taskID, _ := strconv.ParseInt(t.ID, 10, 64)
 		if err := m.pg.RecoverTaskCompletion(s.ctx, taskID); err != nil {
 			log.Printf("[completion] recover task %s: %v", t.ID, err)
-			s.engine.Pause(t.ID, agent.Causef("completion_recovery_failed", "收官恢复失败，任务已暂停", "无法确认旧收官状态；请检查数据库后重试"))
+			s.engine.Pause(t.ID, agent.Causef("completion_recovery_failed", "Completion recovery failed; task paused", "Could not confirm the previous completion state; check the database and retry"))
 			continue
 		}
 		// clear stale 'running' intents from a prior crash/restart (no live worker
 		// owns them) so they re-claim instead of spinning forever in the UI.
 		if n, _ := t.Store.ResetRunningIntents(); n > 0 {
-			log.Printf("[engine] task %s 重置 %d 个残留 running 意图为 open", t.ID, n)
+			log.Printf("[engine] task %s reset %d leftover running intents to open", t.ID, n)
 		}
 		if lifecycle.Paused {
 			s.engine.Pause(t.ID, agent.AbortPausedOnReload)
 		}
-		// 任务级超时:为每个未终态、带 timeout 的任务起 deadline 协调器,独立于 planner/worker
-		// loop——非活跃任务重启后也能在到点后被收尾(deadline 已过则立即走收尾时序)。
+		// Task-level timeout: start a deadline coordinator for every non-terminal task with a timeout, independent of the planner/worker
+		// loop, so inactive tasks still get wrapped up when due after a restart (if the deadline has passed, the wrap-up sequence runs immediately).
 		if !isTerminalStatus(lifecycle.Status) {
 			s.engine.startDeadlineCoordinator(s.ctx, t)
 		}

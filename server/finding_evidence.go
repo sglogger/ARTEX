@@ -11,12 +11,12 @@ import (
 )
 
 func (s *Server) toolUpdateFindingEvidence() actool.CoreTool {
-	return wrTool("update_finding_evidence", "补充已有发现的完整 evidence 和来源，整段覆盖并保留旧证据审计。finding_id 使用独立漏洞记录 ID，先读 get_finding_record/get_finding_traffic 取得最新 evidence_version。来源 fact 必须已保存；引用或流量存在不能替代机制成立的证明。补证使旧审核和报告失效，不重复登记发现。",
+	return wrTool("update_finding_evidence", "Supplement the complete evidence and source of an existing finding, overwriting it entirely while keeping an audit of the old evidence. finding_id is the standalone finding record ID; read get_finding_record/get_finding_traffic first to get the latest evidence_version. The source fact must already be saved; references or the presence of traffic do not replace proof that the mechanism holds. Supplementing evidence invalidates the old review and report; do not record the finding again.",
 		objSchema(map[string]any{
-			"finding_id":       strParam("独立漏洞记录 ID，不是探索节点 ID"),
+			"finding_id":       strParam("Standalone finding record ID, not the exploration node ID"),
 			"evidence_version": map[string]any{"type": "integer", "minimum": 0},
-			"evidence":         strParam("完整实际操作、请求/响应关键内容、机制条件、观察结果和限制；不要只写哈希或已有记录编号"),
-			"reason":           strParam("补充或纠正的原因"),
+			"evidence":         strParam("The complete actual operations, key request/response content, mechanism conditions, observations and limitations; don't write only hashes or existing record numbers"),
+			"reason":           strParam("Reason for the supplement or correction"),
 			"source_fact_ids":  map[string]any{"type": "array", "maxItems": 20, "items": map[string]any{"type": "integer"}},
 		}, "finding_id", "evidence_version", "evidence", "reason"),
 		func(ctx context.Context, in json.RawMessage) (actool.Result, error) {
@@ -28,7 +28,7 @@ func (s *Server) toolUpdateFindingEvidence() actool.CoreTool {
 				Facts     []int64         `json:"source_fact_ids"`
 			}
 			if err := json.Unmarshal(in, &a); err != nil || a.Version == nil || strings.TrimSpace(a.Reason) == "" {
-				return actool.Errorf("finding_id、evidence_version、完整 evidence 和 reason 必填"), nil
+				return actool.Errorf("finding_id, evidence_version, the complete evidence and reason are required"), nil
 			}
 			id := parseProfileID(a.FindingID)
 			if err := s.agentFindingTrafficAccess(ctx, id, true); err != nil {
@@ -46,7 +46,7 @@ func (s *Server) toolUpdateFindingEvidence() actool.CoreTool {
 			if err != nil {
 				return actool.Errorf(err.Error()), nil
 			}
-			return jsonResult(map[string]any{"finding_id": i64s(id), "evidence_version": version, "note": "证据已更新，旧审核与报告需重新复核"})
+			return jsonResult(map[string]any{"finding_id": i64s(id), "evidence_version": version, "note": "evidence updated; the old review and report need to be reviewed again"})
 		})
 }
 

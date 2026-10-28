@@ -17,7 +17,7 @@ func TestFindingCaseGuidanceRespectsToolsAndTrafficSwitch(t *testing.T) {
 		tools = append(tools, writeTool(name, name, obj(nil), func(context.Context, json.RawMessage) (actool.Result, error) { return actool.Text("ok"), nil }))
 	}
 	_, guide := findingCaseWorkflow("reporter", tools)
-	if !strings.Contains(guide, "不能直接取成员最高等级") || !strings.Contains(guide, "独立报告") {
+	if !strings.Contains(guide, "must not simply take the highest member severity") || !strings.Contains(guide, "standalone report") {
 		t.Fatal("missing preservation rules")
 	}
 	if _, guide := findingCaseWorkflow("worker", tools); guide != "" {
@@ -38,7 +38,7 @@ func TestFindingCaseWorkflowDoesNotWaitForApproval(t *testing.T) {
 		tools = append(tools, writeTool(name, name, obj(nil), func(context.Context, json.RawMessage) (actool.Result, error) { return actool.Text("ok"), nil }))
 	}
 	_, guidance := findingCaseWorkflow("reporter", tools)
-	if !strings.Contains(guidance, "不能等待人工确认") || !strings.Contains(guidance, "不是完成报告的前置条件") {
+	if !strings.Contains(guidance, "must not wait for human confirmation") || !strings.Contains(guidance, "not a prerequisite for completing the report") {
 		t.Fatal("workflow must not gate report generation on human approval")
 	}
 }

@@ -1,6 +1,6 @@
-# 测试目录与运行方式
+# Test layout and how to run
 
-测试按所属包归档，不建立混合所有模块的集中目录：
+Tests are filed under the package they belong to; there is no central directory mixing all modules:
 
 ```text
 agent/tests/*_test.go
@@ -9,30 +9,30 @@ db/tests/*_test.go
 server/tests/*_test.go
 norma/llm/tests/*_test.go
 web/src/lib/tests/*.test.mjs
-tests/                      # 仓库级测试入口及发布脚本测试
+tests/                      # repository-level test entry point and release script tests
 ```
 
-## Go 测试
+## Go tests
 
-Go 将子目录视为独立包，而现有白盒测试依赖所属包的未导出成员。因此测试源码用 `//go:build ignore` 避免被当作子包编译；`run.go` 在临时目录去掉这一头部，生成 Go 原生 `-overlay` 映射，把测试**虚拟**映射回原包。
+Go treats subdirectories as separate packages, while the existing white-box tests depend on unexported members of their own package. So the test sources use `//go:build ignore` to avoid being compiled as subpackages; `run.go` strips that header in a temporary directory and generates a native Go `-overlay` mapping that maps the tests **virtually** back into the original package.
 
-不移动业务代码、不导出内部 API、不往业务目录复制文件。包身份、TestMain、测试夹具相对路径和 coverage 都保持原包语义。临时源码和 overlay 在运行结束后清理。**直接执行 `go test ./...` 不会加载迁移后的测试，必须使用以下入口。**
+No business code is moved, no internal API is exported and no files are copied into business directories. Package identity, TestMain, relative fixture paths and coverage all keep the original package semantics. Temporary sources and the overlay are cleaned up after the run. **Running `go test ./...` directly does not load the relocated tests; you must use the entry point below.**
 
-在仓库根目录运行：
+Run from the repository root:
 
 ```bash
-go run ./tests/run.go                          # ARTEX 主模块
-go run ./tests/run.go --module norma           # 独立 norma 模块
-go run ./tests/run.go --all                    # 两个模块；某模块失败仍继续检查另一个
+go run ./tests/run.go                          # ARTEX main module
+go run ./tests/run.go --module norma           # standalone norma module
+go run ./tests/run.go --all                    # both modules; if one fails the other is still checked
 go run ./tests/run.go ./config ./notify -count=1
 go run ./tests/run.go -race ./db ./server -run TestSide -count=1
-go run ./tests/run.go --all -run '^$'           # 编译全部测试，不执行测试用例
-go test ./tests/run.go ./tests/run_test.go      # 入口自身的单元 / 集成测试
+go run ./tests/run.go --all -run '^$'           # compile all tests without running test cases
+go test ./tests/run.go ./tests/run_test.go      # unit / integration tests of the entry point itself
 ```
 
-`--all` / `--module` 位于入口参数最前面，剩余参数转给 `go test`；未指定包时默认 `./...`。跨两个模块执行时，包参数必须在两个模块中都存在（通常使用默认 `./...`）。Go 的 `-overlay` 参数由入口管理，不能另外覆盖。
+`--all` / `--module` go first among the entry point's arguments, and the remaining arguments are passed to `go test`; with no package given the default is `./...`. When running across both modules, package arguments must exist in both modules (usually the default `./...`). Go's `-overlay` flag is managed by the entry point and cannot be overridden separately.
 
-新增 Go 测试放入所属包的 `tests/<文件名>_test.go`，仍声明原来的包名，文件开头固定为：
+New Go tests go into the owning package's `tests/<file name>_test.go`, still declaring the original package name, and always start with:
 
 ```go
 //go:build ignore
@@ -40,19 +40,19 @@ go test ./tests/run.go ./tests/run_test.go      # 入口自身的单元 / 集成
 package yourpackage
 ```
 
-测试夹具保留在原包的 `testdata`；工作目录仍为原包目录。入口隔离嵌套模块、忽略 node_modules/vendor 和构建目录；不会扫描前端测试或技能参考文档。
+Test fixtures stay in the original package's `testdata`; the working directory is still the original package directory. The entry point isolates nested modules and ignores node_modules/vendor and build directories; it does not scan frontend tests or skill reference docs.
 
-依赖 PostgreSQL 的测试需要设置指向**可丢弃测试数据库**的 `ARTEX_PG_DSN`。不要使用生产库。未配置数据库时，部分既有集成用例会跳过，部分会失败；Windows 环境和 norma 也有既有失败用例，本次迁移没有改断言来掩盖这些问题。
+Tests that depend on PostgreSQL need `ARTEX_PG_DSN` pointing at a **disposable test database**. Never use a production database. Without a configured database some existing integration tests skip and some fail; the Windows environment and norma also have existing failing tests, and this migration did not change assertions to hide those problems.
 
-## 前端与发布脚本
+## Frontend and release scripts
 
 ```bash
 cd web
-npm test                         # Node.js 22.6+，不需要额外测试框架
+npm test                         # Node.js 22.6+, no extra test framework needed
 cd ..
-python tests/build_test.py        # Bash + Python 3.9+；Windows 自动使用 Git Bash
+python tests/build_test.py        # Bash + Python 3.9+; Git Bash is used automatically on Windows
 ```
 
-发布脚本测试在独立临时目录执行 `build.sh`，模拟 Go 编译，但实际创建 zip、校验 SHA256 和启动脚本权限。验证全部五个平台、排除旧 zip、不支持 / 重复目标的提前失败以及校验工具失败不能被忽略；不代表已完成真实前端构建或实际发布。
+The release script test runs `build.sh` in an isolated temporary directory, simulating the Go build but actually creating the zips, verifying SHA256 and the startup scripts' permissions. It verifies all five platforms, the exclusion of old zips, early failure on unsupported / duplicate targets, and that checksum tool failures cannot be ignored; it does not mean a real frontend build or an actual release has been done.
 
-CI 在分支 push、PR 和 Release 前执行入口测试、发布脚本测试、全部 Go 测试的编译检查、config/notify/selfupdate 核心包回归和前端单元测试。编译检查不是完整回归通过的声明；完整回归仍使用上面的主模块 / norma / `--all` 命令。
+Before branch pushes, PRs and Releases, CI runs the entry point tests, the release script test, a compile check of all Go tests, regression of the config/notify/selfupdate core packages and the frontend unit tests. The compile check is not a claim that the full regression passes; the full regression still uses the main module / norma / `--all` commands above.

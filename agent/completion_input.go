@@ -73,16 +73,16 @@ func buildReviewInput(snapshot json.RawMessage, taskID, expID int64, limit int) 
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(snapshot, &input); err != nil {
-		return nil, fmt.Errorf("解析终验快照: %w", err)
+		return nil, fmt.Errorf("parse final verification snapshot: %w", err)
 	}
 	if limit <= 0 {
-		return nil, fmt.Errorf("终验输入预算不足，不能省略目标或剩余检查")
+		return nil, fmt.Errorf("final verification input budget is insufficient; goals or remaining checks cannot be omitted")
 	}
 	out := completionReviewInput{
 		Goals: []json.RawMessage{}, Constraints: input.Data.Constraints, RemainingWork: input.Work,
 		GoalsMet: input.GoalsMet, Eligible: input.Eligible, TimedOut: input.TimedOut,
 		EvidenceReferences: []completionReviewReference{}, EvidenceSummaries: []completionReviewSummary{},
-		Notice: "任务原始目标、描述、全部当前目标节点、操作约束和剩余检查均完整保留。证据摘要仅为采样，长摘要已缩短；资产与其他图数据未附带。不得将未展示的证据当作不存在。请用 node_detail、list_facts、list_findings、get_worker_output、get_worker_trace 补查所引用的已保存证据；不能充分核验时必须拒绝完成。",
+		Notice: "The task's original goal, description, all current goal nodes, operating constraints and remaining checks are kept in full. Evidence summaries are only sampled, and long summaries have been shortened; assets and other graph data are not attached. Do not treat evidence that isn't shown as nonexistent. Use node_detail, list_facts, list_findings, get_worker_output and get_worker_trace to look up the saved evidence referenced; when it cannot be verified sufficiently, you must refuse completion.",
 	}
 	if len(out.RemainingWork) == 0 || string(out.RemainingWork) == "null" {
 		out.RemainingWork = json.RawMessage(`[]`)
@@ -98,7 +98,7 @@ func buildReviewInput(snapshot json.RawMessage, taskID, expID int64, limit int) 
 		}
 	}
 	if !foundTask {
-		return nil, fmt.Errorf("终验快照缺少当前任务 %d 的原始目标和描述", taskID)
+		return nil, fmt.Errorf("final verification snapshot is missing the original goal and description of the current task %d", taskID)
 	}
 	goalIDs := map[int64]bool{}
 	var summaries []completionReviewSummary
@@ -111,7 +111,7 @@ func buildReviewInput(snapshot json.RawMessage, taskID, expID int64, limit int) 
 			Payload       json.RawMessage `json:"payload"`
 		}
 		if err := json.Unmarshal(raw, &node); err != nil {
-			return nil, fmt.Errorf("解析终验节点: %w", err)
+			return nil, fmt.Errorf("parse final verification node: %w", err)
 		}
 		if node.Kind == "goal" && node.ExplorationID == expID {
 			out.Goals = append(out.Goals, raw)
@@ -127,7 +127,7 @@ func buildReviewInput(snapshot json.RawMessage, taskID, expID int64, limit int) 
 		}
 		var payload map[string]json.RawMessage
 		if err := json.Unmarshal(node.Payload, &payload); err != nil {
-			return nil, fmt.Errorf("解析终验证据摘要: %w", err)
+			return nil, fmt.Errorf("parse final verification evidence summary: %w", err)
 		}
 		summary := ""
 		for _, key := range []string{"summary", "text", "name"} {
@@ -150,7 +150,7 @@ func buildReviewInput(snapshot json.RawMessage, taskID, expID int64, limit int) 
 		ReferenceID int64 `json:"reference_id"`
 	}
 	if err := json.Unmarshal(out.RemainingWork, &work); err != nil {
-		return nil, fmt.Errorf("解析终验剩余检查: %w", err)
+		return nil, fmt.Errorf("parse final verification remaining checks: %w", err)
 	}
 	for _, item := range work {
 		if item.ReferenceID != 0 {
@@ -163,7 +163,7 @@ func buildReviewInput(snapshot json.RawMessage, taskID, expID int64, limit int) 
 		return nil, err
 	}
 	if len(encoded) > limit {
-		return nil, fmt.Errorf("终验关键输入需要 %d 字节，超过 %d 字节预算；目标、约束和剩余检查未被截断，请调整上下文窗口后重试", len(encoded), limit)
+		return nil, fmt.Errorf("the key final verification input needs %d bytes, exceeding the %d-byte budget; goals, constraints and remaining checks were not truncated; adjust the context window and retry", len(encoded), limit)
 	}
 	for _, summary := range summaries {
 		out.EvidenceSummaries = append(out.EvidenceSummaries, summary)

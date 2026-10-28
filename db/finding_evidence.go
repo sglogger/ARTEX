@@ -14,7 +14,7 @@ import (
 // their own findings; inherited findings remain read-only.
 func (d *DB) UpdateFindingEvidence(ctx context.Context, findingID, version, expectedTaskID int64, evidence, actor, reason string, factIDs []int64) (next int64, err error) {
 	if findingID <= 0 || version < 0 || strings.TrimSpace(evidence) == "" || strings.TrimSpace(actor) == "" || strings.TrimSpace(reason) == "" || len(factIDs) > 20 {
-		return 0, errors.New("补证需要有效记录、版本、完整 evidence、来源与原因；事实引用最多 20 条")
+		return 0, errors.New("adding evidence needs a valid record, version, complete evidence, source and reason; at most 20 fact refs")
 	}
 	refs, err := json.Marshal(factIDs)
 	if err != nil {
@@ -32,12 +32,12 @@ func (d *DB) UpdateFindingEvidence(ctx context.Context, findingID, version, expe
 			return err
 		}
 		if expectedTaskID > 0 && owner.Int64 != expectedTaskID {
-			return errors.New("只能补充当前任务自己的发现，继承记录只读")
+			return errors.New("only findings of the current task can be supplemented; inherited records are read-only")
 		}
 		seen := map[int64]bool{}
 		for _, id := range factIDs {
 			if id <= 0 || seen[id] || !nodeID.Valid || !expID.Valid {
-				return errors.New("事实引用必须唯一且关联到有效发现节点")
+				return errors.New("fact refs must be unique and linked to valid finding nodes")
 			}
 			seen[id] = true
 			var allowed bool
@@ -45,7 +45,7 @@ func (d *DB) UpdateFindingEvidence(ctx context.Context, findingID, version, expe
 				return err
 			}
 			if !allowed {
-				return fmt.Errorf("事实 %d 不属于本任务或可读的直接来源任务", id)
+				return fmt.Errorf("fact %d does not belong to this task or a readable direct source task", id)
 			}
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE findings SET evidence_audit=evidence_audit || jsonb_build_array(jsonb_build_object('at',now(),'actor',$2::text,'reason',$3::text,'previous_version',evidence_version,'previous_evidence',evidence,'previous_node_payload',(SELECT payload FROM exploration_nodes WHERE id=findings.node_id))),evidence=$4,evidence_version=evidence_version+1 WHERE id=$1`, findingID, actor, reason, evidence); err != nil {

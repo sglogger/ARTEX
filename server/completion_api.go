@@ -20,7 +20,7 @@ func (s *Server) retryTaskCompletion(w http.ResponseWriter, r *http.Request) {
 		Reason    string `json:"reason"`
 	}
 	if json.NewDecoder(r.Body).Decode(&input) != nil || input.AttemptID <= 0 || strings.TrimSpace(input.Reason) == "" {
-		writeErr(w, 400, "收官轮次和恢复原因必填")
+		writeErr(w, 400, "completion round and recovery reason are required")
 		return
 	}
 	s.engine.deleteMu.RLock()
@@ -28,13 +28,13 @@ func (s *Server) retryTaskCompletion(w http.ResponseWriter, r *http.Request) {
 	s.engine.completionMu.Lock()
 	defer s.engine.completionMu.Unlock()
 	if s.engine.IsDeleting(t.ID) || s.engine.isCompleting(t.ID) || s.engine.IsPaused(t.ID) || isTerminalStatus(t.lifecycleSnapshot().Status) {
-		writeErr(w, 409, "任务仍在收尾、暂停或已结束，不能重新复核")
+		writeErr(w, 409, "the task is still wrapping up, paused or finished; cannot review again")
 		return
 	}
 	id, _ := strconv.ParseInt(t.ID, 10, 64)
 	if err := s.m.pg.ResetTaskCompletionFailure(r.Context(), id, input.AttemptID, "human", strings.TrimSpace(input.Reason)); err != nil {
 		if errors.Is(err, db.ErrCompletionChanged) {
-			writeErr(w, 409, "收官状态已变化，请刷新后再试")
+			writeErr(w, 409, "completion state changed, please refresh and retry")
 		} else {
 			writeErr(w, 500, err.Error())
 		}

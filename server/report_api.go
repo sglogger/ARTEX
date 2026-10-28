@@ -15,11 +15,11 @@ func (s *Server) getReport(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 404, "no active task")
 		return
 	}
-	findings, _ := t.Store.ListByKind(db.KindFinding, 1000) // 纯漏洞（事实是独立的 KindFact，不进报告）
+	findings, _ := t.Store.ListByKind(db.KindFinding, 1000) // findings only (facts are a separate KindFact and stay out of the report)
 	taskID, _ := strconv.ParseInt(t.ID, 10, 64)
 	completion, err := s.m.PG().TaskCompletion(r.Context(), taskID)
 	if err != nil {
-		writeErr(w, 500, "读取任务收官记录失败")
+		writeErr(w, 500, "failed to read the task completion record")
 		return
 	}
 	counts := map[string]int{}

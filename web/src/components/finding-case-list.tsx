@@ -34,9 +34,9 @@ export function FindingSeverityCounts({
   return (
     <span
       className="inline-flex items-center gap-0.5 text-sm tabular-nums"
-      title="原始上报记录：严重 / 高 / 中 / 低"
+      title="Raw reports: critical / high / medium / low"
       role="img"
-      aria-label={`严重${counts.critical}，高危${counts.high}，中危${counts.medium}，低危${counts.low}`}
+      aria-label={`Critical ${counts.critical}, high ${counts.high}, medium ${counts.medium}, low ${counts.low}`}
     >
       <span className={counts.critical ? "text-severity-critical" : "text-muted-foreground"}>{counts.critical}</span>
       <span>/</span>
@@ -71,7 +71,7 @@ export function FindingCaseMemberRow({
       )}
     >
       {onSelect && !f.inherited ? (
-        <Checkbox checked={selected} onCheckedChange={(v) => onSelect(id, v === true)} aria-label={`选择上报 #${id}`} />
+        <Checkbox checked={selected} onCheckedChange={(v) => onSelect(id, v === true)} aria-label={`Select report #${id}`} />
       ) : null}
       <StatusBadge domain="severity" value={f.severity} />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -79,16 +79,16 @@ export function FindingCaseMemberRow({
           className="truncate font-medium hover:underline"
           href={`/function/findings/detail?id=${id}${contextTask ? `&context_task=${contextTask}` : ""}`}
         >
-          #{id} {[f.name, f.vulnclass].find((v) => v?.trim()) ?? "未分类"}
+          #{id} {[f.name, f.vulnclass].find((v) => v?.trim()) ?? "Uncategorized"}
         </Link>
         <span className="truncate text-muted-foreground text-xs">{f.summary}</span>
       </div>
-      {!matched ? <Badge variant="outline">未命中当前筛选</Badge> : null}
-      {f.inherited ? <Badge variant="outline">继承 · 只读</Badge> : null}
+      {!matched ? <Badge variant="outline">Not in current filter</Badge> : null}
+      {f.inherited ? <Badge variant="outline">Inherited · read-only</Badge> : null}
       <StatusBadge domain="finding" value={f.status} />
       <Button asChild variant="ghost" size="sm">
         <Link href={`/function/findings/detail?id=${id}${contextTask ? `&context_task=${contextTask}` : ""}`}>
-          查看报告
+          View report
         </Link>
       </Button>
     </div>
@@ -134,9 +134,9 @@ export function FindingCaseMembers({
     return (
       <Alert>
         <AlertDescription>
-          成员加载失败：{error}
+          Failed to load members: {error}
           <Button variant="link" onClick={() => setRetry((v) => v + 1)}>
-            重试
+            Retry
           </Button>
         </AlertDescription>
       </Alert>
@@ -206,12 +206,12 @@ export function FindingCaseReviewPanel({ taskId, onChange }: { taskId?: string; 
       setSuggestions((v) => v.filter((x) => x.id !== s.id));
       if (accept && result.case_id !== "0") {
         if (result.report_queued) {
-          toast.success("已归并，Agent 已排队生成统一报告");
+          toast.success("Merged; the agent has queued a unified report");
         } else {
-          toast.warning(`已归并，统一报告暂未生成：${result.report_error || "请稍后重新生成"}`);
+          toast.warning(`Merged, but the unified report was not generated: ${result.report_error || "regenerate it later"}`);
         }
       } else {
-        toast.success("已否决，不会自动再次归并");
+        toast.success("Rejected; it will not be merged automatically again");
       }
       onChange?.();
     } catch (e) {
@@ -222,7 +222,7 @@ export function FindingCaseReviewPanel({ taskId, onChange }: { taskId?: string; 
     <div className="flex flex-col gap-2">
       {error ? (
         <Alert>
-          <AlertDescription>整理状态加载失败：{error}</AlertDescription>
+          <AlertDescription>Failed to load consolidation status: {error}</AlertDescription>
         </Alert>
       ) : null}
       {suggestions.map((s) => (
@@ -230,13 +230,13 @@ export function FindingCaseReviewPanel({ taskId, onChange }: { taskId?: string; 
           <AlertDescription>
             <div className="flex flex-wrap items-center gap-2">
               <span className="flex-1">
-                疑似重复：#{s.left_id} / #{s.right_id} · {s.title}。{s.reason}
+                Possible duplicate: #{s.left_id} / #{s.right_id} · {s.title}. {s.reason}
               </span>
               <Button variant="outline" size="sm" onClick={() => resolve(s, true)}>
-                确认归并
+                Confirm merge
               </Button>
               <Button variant="ghost" size="sm" onClick={() => resolve(s, false)}>
-                不是同一漏洞
+                Not the same finding
               </Button>
             </div>
           </AlertDescription>
@@ -245,11 +245,11 @@ export function FindingCaseReviewPanel({ taskId, onChange }: { taskId?: string; 
       {runs.slice(0, 5).map((r) => (
         <div key={r.conversation_id} className="flex flex-wrap items-center gap-2 text-muted-foreground text-xs">
           <span>
-            任务 #{r.task_id} 整理：{{ queued: "排队中", running: "运行中", done: "已完成", failed: "失败" }[r.state]}
+            Task #{r.task_id} consolidation: {{ queued: "Queued", running: "Running", done: "Done", failed: "Failed" }[r.state]}
           </span>
           {r.error ? <span className="text-destructive">{r.error}</span> : null}
           <Link className="underline" href={`/chat?c=${r.conversation_id}`}>
-            查看执行记录
+            View run log
           </Link>
         </div>
       ))}
@@ -326,9 +326,9 @@ export function FindingCaseList({
       {error ? (
         <Alert>
           <AlertDescription>
-            加载失败：{error}
+            Failed to load: {error}
             <Button variant="link" onClick={() => setRefresh((v) => v + 1)}>
-              重试
+              Retry
             </Button>
           </AlertDescription>
         </Alert>
@@ -340,8 +340,8 @@ export function FindingCaseList({
       ) : null}
       {data ? (
         <p className="text-muted-foreground text-xs">
-          {data.stats.total} 个独立漏洞 · {data.stats.reports} 条上报
-          {data.stats.unassessed > 0 ? ` · ${data.stats.unassessed} 个待评估` : ""}
+          {data.stats.total} distinct findings · {data.stats.reports} reports
+          {data.stats.unassessed > 0 ? ` · ${data.stats.unassessed} awaiting assessment` : ""}
         </p>
       ) : null}
       {data?.items.map((row) => {
@@ -354,7 +354,7 @@ export function FindingCaseList({
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    aria-label={`${open.has(group.id) ? "收起" : "展开"}${group.title}`}
+                    aria-label={`${open.has(group.id) ? "Collapse" : "Expand"} ${group.title}`}
                     aria-expanded={open.has(group.id)}
                     onClick={() => toggle(group.id)}
                   >
@@ -371,15 +371,15 @@ export function FindingCaseList({
                       </Link>
                     </CardTitle>
                     <CardDescription>
-                      {group.count} 条上报 ·{" "}
-                      {group.report_version !== group.version ? "统一报告待更新" : "统一报告已生成"}
+                      {group.count} reports ·{" "}
+                      {group.report_version !== group.version ? "Unified report needs update" : "Unified report generated"}
                     </CardDescription>
                   </div>
                   <FindingSeverityCounts counts={group} />
                   <Badge variant="outline">
                     {group.severity
-                      ? `统一评级：${{ critical: "严重", high: "高危", medium: "中危", low: "低危" }[group.severity]}`
-                      : "待评估"}
+                      ? `Unified rating: ${{ critical: "Critical", high: "High", medium: "Medium", low: "Low" }[group.severity]}`
+                      : "Awaiting assessment"}
                   </Badge>
                 </div>
               </CardHeader>
@@ -413,7 +413,7 @@ export function FindingCaseList({
           );
         return null;
       })}
-      {data?.total === 0 ? <p className="p-6 text-center text-muted-foreground text-sm">暂无匹配漏洞</p> : null}
+      {data?.total === 0 ? <p className="p-6 text-center text-muted-foreground text-sm">No matching findings</p> : null}
       {data ? (
         <TablePagination
           page={page}

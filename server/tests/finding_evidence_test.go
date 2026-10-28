@@ -34,7 +34,7 @@ func TestEvidenceHandoffActualRoleAssemblyAndTaskIsolation(t *testing.T) {
 		}
 		cleanup()
 	}
-	input := map[string]any{"finding_id": initial.FindingID, "evidence_version": f.EvidenceVersion, "evidence": "saved fixture response", "reason": "補全遗漏证据"}
+	input := map[string]any{"finding_id": initial.FindingID, "evidence_version": f.EvidenceVersion, "evidence": "saved fixture response", "reason": "fill in missing evidence"}
 	workflowCall(t, ctx, s.toolUpdateFindingEvidence(), input, false)
 	workflowCall(t, ctx, s.toolUpdateFindingEvidence(), input, true)
 	child, err := s.m.CreateTaskWithOptions("read-only inheritance", "fixture", db.TaskCreateOptions{SourceTaskIDs: []int64{*f.TaskID}})

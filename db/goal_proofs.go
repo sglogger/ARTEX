@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-var ErrGoalProofChanged = errors.New("目标、证据或任务状态已变化，请重新审核")
+var ErrGoalProofChanged = errors.New("the goal, evidence or task state has changed; review again")
 
 // GoalStateCounts counts the full local goal set, independent of display pages.
 func (s *ExplorationStore) GoalStateCounts(ctx context.Context) (GoalCounts, error) {
@@ -229,7 +229,7 @@ func appendGoalAudit(ctx context.Context, tx *sql.Tx, goalID int64, audit GoalAu
 // rejected attempt records its gap without claiming that any outcome occurred.
 func (s *ExplorationStore) CommitGoalProof(ctx context.Context, snapshot GoalProofSnapshot, supported bool, actor, reason string) error {
 	if strings.TrimSpace(actor) == "" || strings.TrimSpace(reason) == "" || snapshot.Goal == nil || snapshot.Evidence == nil || snapshot.ExplorationID != s.expID {
-		return fmt.Errorf("目标审核缺少来源、理由或快照")
+		return fmt.Errorf("goal review is missing a source, reason or snapshot")
 	}
 	if supported {
 		if err := ValidateGoalEvidence(snapshot); err != nil {
@@ -305,7 +305,7 @@ func goalPreviousProofs(ctx context.Context, tx *sql.Tx, expID, goalID int64) ([
 
 func (s *ExplorationStore) ReopenGoal(ctx context.Context, goalID int64, version int, actor, reason string) error {
 	if strings.TrimSpace(actor) == "" || strings.TrimSpace(reason) == "" {
-		return fmt.Errorf("目标纠错必须有操作者和原因")
+		return fmt.Errorf("a goal correction needs an operator and a reason")
 	}
 	return s.goalTransaction(ctx, func(tx *sql.Tx) error {
 		n, err := scanNode(tx.QueryRowContext(ctx, `SELECT `+nodeCols+` FROM exploration_nodes WHERE id=$1 AND exploration_id=$2 AND kind='goal' AND state='met' AND content_version=$3`, goalID, s.expID, version))
@@ -360,7 +360,7 @@ func (s *ExplorationStore) editGoalPayload(id int64, text, vulnclass string) err
 		if err != nil {
 			return err
 		}
-		if err = appendGoalAudit(ctx, tx, id, GoalAudit{At: time.Now().UTC(), Event: "edit", Actor: "human", Reason: "目标内容已修改，撤销旧完成判定并重新审核", PreviousState: n.State, GoalVersion: n.ContentVersion, PreviousProofs: proofs, Snapshot: n.Payload}); err != nil {
+		if err = appendGoalAudit(ctx, tx, id, GoalAudit{At: time.Now().UTC(), Event: "edit", Actor: "human", Reason: "Goal content changed; the old completion verdict was revoked for a new review", PreviousState: n.State, GoalVersion: n.ContentVersion, PreviousProofs: proofs, Snapshot: n.Payload}); err != nil {
 			return err
 		}
 		if _, err = tx.ExecContext(ctx, `DELETE FROM exploration_edges WHERE exploration_id=$1 AND dst_id=$2 AND rel='proves'`, s.expID, id); err != nil {

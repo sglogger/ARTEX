@@ -51,7 +51,7 @@ func (s *Server) fsListSkills(w http.ResponseWriter, r *http.Request) {
 	if s.m.pg != nil {
 		stats, err := s.m.pg.SkillStats()
 		if err != nil {
-			log.Printf("[skills] 读取调用统计失败: %v", err)
+			log.Printf("[skills] failed to read call statistics: %v", err)
 		}
 		for _, st := range stats {
 			statBySkill[st.Skill] = st
@@ -90,7 +90,7 @@ func (s *Server) fsSkillUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	name := r.PathValue("name")
 	if !validSkillName(name) {
-		writeErr(w, 400, "非法 skill 名")
+		writeErr(w, 400, "invalid skill name")
 		return
 	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))

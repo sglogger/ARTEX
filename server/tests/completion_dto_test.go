@@ -11,9 +11,9 @@ import (
 )
 
 func TestCompletionDTOAndReportPreserveUnfinishedReason(t *testing.T) {
-	input := db.CompletionInput{Data: json.RawMessage(`{"private_large_snapshot":"must not leak into task DTO"}`), Review: "目标证据已经复核", Work: []db.CompletionWork{{IntentID: 12, State: "running", Summary: "remaining check", CompletionDisposition: db.CompletionDisposition{Kind: "irrelevant", Reason: "outside original goal"}}}}
+	input := db.CompletionInput{Data: json.RawMessage(`{"private_large_snapshot":"must not leak into task DTO"}`), Review: "goal evidence already reviewed", Work: []db.CompletionWork{{IntentID: 12, State: "running", Summary: "remaining check", CompletionDisposition: db.CompletionDisposition{Kind: "irrelevant", Reason: "outside original goal"}}}}
 	raw, _ := json.Marshal(input)
-	input.GoalGaps = []db.CompletionGoalGap{{GoalID: 4, ExpectedVersion: 2, Reason: "未取得 flag"}}
+	input.GoalGaps = []db.CompletionGoalGap{{GoalID: 4, ExpectedVersion: 2, Reason: "flag not obtained"}}
 	raw, _ = json.Marshal(input)
 	c := &db.TaskCompletion{AttemptID: 3, Phase: "completed", Reason: "validated", Snapshot: raw}
 	dto := completionDTO(c)
@@ -27,11 +27,11 @@ func TestCompletionDTOAndReportPreserveUnfinishedReason(t *testing.T) {
 	if strings.Contains(string(data), "private_large_snapshot") {
 		t.Fatal("task DTO exposes full raw evidence snapshot")
 	}
-	if len(dto.GoalGaps) != 1 || dto.GoalGaps[0].Reason != "未取得 flag" {
+	if len(dto.GoalGaps) != 1 || dto.GoalGaps[0].Reason != "flag not obtained" {
 		t.Fatal("task DTO lost structured goal gap")
 	}
 	report := completionReport(c)
-	for _, text := range []string{"停止决定不代表检查验证通过", "#12", "outside original goal", "目标证据已经复核", "目标 #4", "未取得 flag"} {
+	for _, text := range []string{"stop decisions below do not mean the checks passed", "#12", "outside original goal", "goal evidence already reviewed", "Goal #4", "flag not obtained"} {
 		if !strings.Contains(report, text) {
 			t.Fatalf("report misses %q: %s", text, report)
 		}
