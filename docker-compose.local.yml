@@ -1,0 +1,10 @@
+# Override: build the artex image from the current checkout instead of pulling dgddw/artex.
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+# Or set COMPOSE_FILE=docker-compose.yml:docker-compose.local.yml in .env and use plain `docker compose up -d --build`.
+services:
+  artex:
+    image: artex:local
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: Dockerfile.source
