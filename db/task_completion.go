@@ -383,8 +383,9 @@ func (d *DB) ReviewTaskCompletion(ctx context.Context, taskID, attemptID int64, 
 
 // FinishTaskCompletion performs a short, serializable-by-locking compare and
 // commit. A stale reviewer can neither overwrite pause/timeout nor omit new work.
+// "stopped" is the user-stop counterpart of "timeout" and is committed the same way.
 func (d *DB) FinishTaskCompletion(ctx context.Context, taskID, attemptID int64, digest, status, review string) error {
-	if status != "done" && status != "timeout" {
+	if status != "done" && status != "timeout" && status != "stopped" {
 		return fmt.Errorf("invalid completion terminal %q", status)
 	}
 	return d.completionTransaction(ctx, taskID, func(tx *sql.Tx) error {
@@ -407,8 +408,8 @@ func (d *DB) FinishTaskCompletion(ctx context.Context, taskID, attemptID int64, 
 			return ErrCompletionChanged
 		}
 		res, err := tx.ExecContext(ctx, `UPDATE tasks SET status=$2,completed_at=now()
-		 WHERE id=$1 AND deleted_at IS NULL AND status NOT IN ('done','failed','timeout')
-		 AND ($2='timeout' OR (NOT paused AND NOT queued AND ($3 OR deadline_at IS NULL OR deadline_at>now())))`, taskID, status, prior.TimedOut)
+		 WHERE id=$1 AND deleted_at IS NULL AND status NOT IN ('done','failed','timeout','stopped')
+		 AND ($2 IN ('timeout','stopped') OR (NOT paused AND NOT queued AND ($3 OR deadline_at IS NULL OR deadline_at>now())))`, taskID, status, prior.TimedOut)
 		if err != nil {
 			return err
 		}
@@ -417,7 +418,9 @@ func (d *DB) FinishTaskCompletion(ctx context.Context, taskID, attemptID int64, 
 		}
 		for _, work := range input.Work {
 			reason := work.Reason
-			if reason == "" {
+			if reason == "" && status == "stopped" {
+				reason = "Task stopped by the user; this check is incomplete"
+			} else if reason == "" {
 				reason = "Task time budget exhausted; this check is incomplete"
 			}
 			for index := range prior.Work {

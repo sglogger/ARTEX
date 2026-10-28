@@ -42,6 +42,8 @@ type Task struct {
 	TimeoutSeconds int        `json:"timeout_seconds"`        // 0 = unlimited
 	FirstRunAt     *time.Time `json:"first_run_at,omitempty"` // when it first actually started running (not created_at); nil = not run yet
 	DeadlineAt     *time.Time `json:"deadline_at,omitempty"`  // = first_run_at + timeout_seconds; nil = unlimited or not run
+	// StopRequestedAt is set when a user asks to stop the task; the wrap-up then ends it as stopped (or done). Cleared on revival.
+	StopRequestedAt *time.Time `json:"stop_requested_at,omitempty"`
 	// Planner heartbeat trigger interval (seconds): once this long has passed since the last plan ended/the task started with no trigger in between → trigger a round.
 	// Floor = default = 300 (5min); anything lower is raised to 300 (normalized in CreateTask). See the planner trigger implementation plan.
 	PlanHeartbeatSeconds int `json:"plan_heartbeat_seconds"`
@@ -72,7 +74,7 @@ type TaskDeletePreparation struct {
 // IsTerminal reports whether a task status is a terminal (finished) state.
 // The single source of truth, replacing done/failed checks hard-coded all over the place.
 func IsTerminal(status string) bool {
-	return status == "done" || status == "failed" || status == "timeout"
+	return status == "done" || status == "failed" || status == "timeout" || status == "stopped"
 }
 
 // CreateTask creates an exploration + task in one transaction and returns the task.
@@ -344,11 +346,11 @@ func insertTaskLLMProfiles(tx *sql.Tx, taskID int64, profileIDs []int64) error {
 
 const taskCols = `id, COALESCE(name,''), category_id,
 COALESCE((SELECT category.name FROM task_categories category WHERE category.id=tasks.category_id),''),
-description, goal, exploration_id, status, paused, queued, queued_at, COALESCE(queue_mode,''), llm_profile_id, active_llm_profile_id, COALESCE(parent_ref,''), pinned_at, created_at, completed_at, COALESCE(timeout_seconds,0), COALESCE(plan_heartbeat_seconds,300), COALESCE(coverage_enabled,true), first_run_at, deadline_at`
+description, goal, exploration_id, status, paused, queued, queued_at, COALESCE(queue_mode,''), llm_profile_id, active_llm_profile_id, COALESCE(parent_ref,''), pinned_at, created_at, completed_at, COALESCE(timeout_seconds,0), COALESCE(plan_heartbeat_seconds,300), COALESCE(coverage_enabled,true), first_run_at, deadline_at, stop_requested_at`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var t Task
-	if err := sc.Scan(&t.ID, &t.Name, &t.CategoryID, &t.CategoryName, &t.Description, &t.Goal, &t.ExplorationID, &t.Status, &t.Paused, &t.Queued, &t.QueuedAt, &t.QueueMode, &t.LLMProfileID, &t.ActiveLLMProfileID, &t.ParentRef, &t.PinnedAt, &t.CreatedAt, &t.CompletedAt, &t.TimeoutSeconds, &t.PlanHeartbeatSeconds, &t.CoverageEnabled, &t.FirstRunAt, &t.DeadlineAt); err != nil {
+	if err := sc.Scan(&t.ID, &t.Name, &t.CategoryID, &t.CategoryName, &t.Description, &t.Goal, &t.ExplorationID, &t.Status, &t.Paused, &t.Queued, &t.QueuedAt, &t.QueueMode, &t.LLMProfileID, &t.ActiveLLMProfileID, &t.ParentRef, &t.PinnedAt, &t.CreatedAt, &t.CompletedAt, &t.TimeoutSeconds, &t.PlanHeartbeatSeconds, &t.CoverageEnabled, &t.FirstRunAt, &t.DeadlineAt, &t.StopRequestedAt); err != nil {
 		return nil, err
 	}
 	t.Pinned = t.PinnedAt != nil
@@ -486,14 +488,14 @@ func (d *DB) SetQueued(id int64, queued bool) error {
 }
 
 // SetStatus updates a task's lifecycle status. Entering a terminal state
-// (done/failed/timeout) stamps completed_at once (COALESCE keeps the first stamp
+// (done/failed/timeout/stopped) stamps completed_at once (COALESCE keeps the first stamp
 // stable); moving back to a non-terminal state clears it, so a re-run has no stale
 // finish time.
 func (d *DB) SetStatus(id int64, status string) error {
 	_, err := d.Exec(`
 UPDATE tasks
    SET status = $1,
-       completed_at = CASE WHEN $1 IN ('done','failed','timeout') THEN COALESCE(completed_at, now()) ELSE NULL END
+       completed_at = CASE WHEN $1 IN ('done','failed','timeout','stopped') THEN COALESCE(completed_at, now()) ELSE NULL END
  WHERE id = $2`, status, id)
 	return err
 }
@@ -507,7 +509,7 @@ func (d *DB) SetTerminalStatusGuarded(id int64, status string) (won bool, err er
 UPDATE tasks
    SET status = $1,
        completed_at = COALESCE(completed_at, now())
- WHERE id = $2 AND status NOT IN ('done','failed','timeout')`, status, id)
+ WHERE id = $2 AND status NOT IN ('done','failed','timeout','stopped')`, status, id)
 	if err != nil {
 		return false, err
 	}

@@ -265,7 +265,7 @@ function publicMockTask(task: Task): Task {
 function mockArchiveTask(taskID: string): MockTaskArchive {
   const task = mockTasks.find((item) => item.id === taskID);
   if (!task) throw new Error("Task not found");
-  if (!["paused", "done", "failed", "timeout"].includes(task.status) && !task.paused) {
+  if (!["paused", "done", "failed", "timeout", "stopped"].includes(task.status) && !task.paused) {
     throw new Error(task.queued ? "A queued task must be paused first" : "A running task must be paused first");
   }
   const existing = mockTaskArchives.find((item) => item.task_id === mockArchiveTaskID(taskID));
@@ -943,7 +943,7 @@ function sendMockWorkerMessage(
 function controlMockTask(id: string, action: "pause" | "resume"): BatchControlItem {
   const task = mockTasks.find((item) => item.id === id);
   if (!task) return { id, ok: false, error: "Task not found" };
-  if (task.status === "done" || task.status === "failed" || task.status === "timeout") {
+  if (task.status === "done" || task.status === "failed" || task.status === "timeout" || task.status === "stopped") {
     return { id, ok: false, status: task.status, error: "Tasks in a final state cannot be controlled" };
   }
   if (action === "pause") {

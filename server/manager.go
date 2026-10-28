@@ -53,13 +53,14 @@ type Task struct {
 	LLMFailoverReason  string  `json:"llm_failover_reason,omitempty"`
 	SourceTaskIDs      []int64 `json:"source_task_ids,omitempty"`
 	CompanyIDs         []int64 `json:"company_ids,omitempty"`
-	Status             string  `json:"status"` // persisted lifecycle status (done/failed/timeout are terminal; empty/other is derived from the runtime state)
+	Status             string  `json:"status"` // persisted lifecycle status (done/failed/timeout/stopped are terminal; empty/other is derived from the runtime state)
 	// Task-level timeout (see the task-level timeout and wrap-up design doc). DeadlineAt/FirstRunAt are unix seconds, 0 = unset/not run.
 	TimeoutSeconds       int                    `json:"timeout_seconds"`
 	PlanHeartbeatSeconds int                    `json:"plan_heartbeat_seconds"` // planner heartbeat interval (seconds)
 	CoverageEnabled      bool                   `json:"coverage_enabled"`       // asset coverage switch (set at creation, on by default)
 	FirstRunAt           int64                  `json:"first_run_at,omitempty"`
 	DeadlineAt           int64                  `json:"deadline_at,omitempty"`
+	StopRequestedAt      int64                  `json:"stop_requested_at,omitempty"` // unix seconds a user stop was requested; 0 = none. Non-zero on a live task = wrapping up
 	Store                *pgdb.ExplorationStore `json:"-"`
 	Guard                *guard.Guard           `json:"-"`
 	notify               chan struct{}
@@ -78,22 +79,23 @@ type Task struct {
 // updateLifecycle instead of reading or writing the corresponding Task fields
 // directly after the task has been published by Manager.
 type taskLifecycleState struct {
-	Goal          string
-	Description   string
-	Name          string
-	PinnedAt      int64
-	Status        string
-	Paused        bool
-	Queued        bool
-	QueuedAt      int64
-	QueueMode     string
-	CompletedAt   int64
-	FirstRunAt    int64
-	DeadlineAt    int64
-	SourceTaskIDs []int64
-	CompanyIDs    []int64
-	CategoryID    *int64
-	CategoryName  string
+	Goal            string
+	Description     string
+	Name            string
+	PinnedAt        int64
+	Status          string
+	Paused          bool
+	Queued          bool
+	QueuedAt        int64
+	QueueMode       string
+	CompletedAt     int64
+	FirstRunAt      int64
+	DeadlineAt      int64
+	StopRequestedAt int64
+	SourceTaskIDs   []int64
+	CompanyIDs      []int64
+	CategoryID      *int64
+	CategoryName    string
 }
 
 func (t *Task) lifecycleSnapshot() taskLifecycleState {
@@ -107,22 +109,23 @@ func (t *Task) lifecycleSnapshot() taskLifecycleState {
 
 func (t *Task) lifecycleSnapshotLocked() taskLifecycleState {
 	return taskLifecycleState{
-		Goal:          t.Goal,
-		Description:   t.Description,
-		Name:          t.Name,
-		PinnedAt:      t.PinnedAt,
-		Status:        t.Status,
-		Paused:        t.Paused,
-		Queued:        t.Queued,
-		QueuedAt:      t.QueuedAt,
-		QueueMode:     t.QueueMode,
-		CompletedAt:   t.CompletedAt,
-		FirstRunAt:    t.FirstRunAt,
-		DeadlineAt:    t.DeadlineAt,
-		SourceTaskIDs: append([]int64(nil), t.SourceTaskIDs...),
-		CompanyIDs:    append([]int64(nil), t.CompanyIDs...),
-		CategoryID:    cloneInt64Ptr(t.CategoryID),
-		CategoryName:  t.CategoryName,
+		Goal:            t.Goal,
+		Description:     t.Description,
+		Name:            t.Name,
+		PinnedAt:        t.PinnedAt,
+		Status:          t.Status,
+		Paused:          t.Paused,
+		Queued:          t.Queued,
+		QueuedAt:        t.QueuedAt,
+		QueueMode:       t.QueueMode,
+		CompletedAt:     t.CompletedAt,
+		FirstRunAt:      t.FirstRunAt,
+		DeadlineAt:      t.DeadlineAt,
+		StopRequestedAt: t.StopRequestedAt,
+		SourceTaskIDs:   append([]int64(nil), t.SourceTaskIDs...),
+		CompanyIDs:      append([]int64(nil), t.CompanyIDs...),
+		CategoryID:      cloneInt64Ptr(t.CategoryID),
+		CategoryName:    t.CategoryName,
 	}
 }
 
@@ -145,6 +148,7 @@ func (t *Task) updateLifecycle(update func(*taskLifecycleState)) {
 	t.CompletedAt = state.CompletedAt
 	t.FirstRunAt = state.FirstRunAt
 	t.DeadlineAt = state.DeadlineAt
+	t.StopRequestedAt = state.StopRequestedAt
 	t.SourceTaskIDs = append(t.SourceTaskIDs[:0], state.SourceTaskIDs...)
 	t.CompanyIDs = append(t.CompanyIDs[:0], state.CompanyIDs...)
 	t.CategoryID = cloneInt64Ptr(state.CategoryID)
@@ -861,7 +865,8 @@ func taskFromPG(pt *pgdb.Task, store *pgdb.ExplorationStore, ic *intercept.Inter
 		TimeoutSeconds: pt.TimeoutSeconds, PlanHeartbeatSeconds: pt.PlanHeartbeatSeconds,
 		CoverageEnabled: pt.CoverageEnabled,
 		FirstRunAt:      unixOrZero(pt.FirstRunAt), DeadlineAt: unixOrZero(pt.DeadlineAt),
-		Store: store, Guard: guard.NewWithInterceptor(ic), notify: make(chan struct{}, 1),
+		StopRequestedAt: unixOrZero(pt.StopRequestedAt),
+		Store:           store, Guard: guard.NewWithInterceptor(ic), notify: make(chan struct{}, 1),
 	}
 }
 
@@ -1187,7 +1192,7 @@ func (m *Manager) ApplyTaskAdmission(id, expectedStatus, status string, queued b
 	UPDATE tasks t
 	SET status=$2,
 	    completed_at=CASE
-	        WHEN $2 IN ('done','failed','timeout') THEN COALESCE(completed_at, now())
+	        WHEN $2 IN ('done','failed','timeout','stopped') THEN COALESCE(completed_at, now())
 	        ELSE NULL
 	    END,
 	    paused=false,
@@ -1203,12 +1208,16 @@ func (m *Manager) ApplyTaskAdmission(id, expectedStatus, status string, queued b
 	        ELSE 'resume'
 	    END,
 	    first_run_at=CASE
-	        WHEN $6='timeout' AND $2 NOT IN ('done','failed','timeout') THEN NULL
+	        WHEN $6='timeout' AND $2 NOT IN ('done','failed','timeout','stopped') THEN NULL
 	        ELSE first_run_at
 	    END,
 	    deadline_at=CASE
-	        WHEN $6='timeout' AND $2 NOT IN ('done','failed','timeout') THEN NULL
+	        WHEN $6='timeout' AND $2 NOT IN ('done','failed','timeout','stopped') THEN NULL
 	        ELSE deadline_at
+	    END,
+	    stop_requested_at=CASE
+	        WHEN $2 IN ('done','failed','timeout','stopped') THEN stop_requested_at
+	        ELSE NULL
 	    END
 	FROM previous
 	WHERE t.id=previous.id
@@ -1249,10 +1258,51 @@ func (m *Manager) ApplyTaskAdmission(id, expectedStatus, status string, queued b
 			if deadlineAt.Valid {
 				state.DeadlineAt = deadlineAt.Time.Unix()
 			}
+			if !isTerminalStatus(status) {
+				state.StopRequestedAt = 0
+			}
 		})
 	}
 	m.mu.Unlock()
 	return nil
+}
+
+// RequestTaskStop durably records a user stop on a live task and removes it from
+// the admission queue, so a queued task never starts. The engine's wrap-up then
+// ends it as stopped (or done); on restart the recorded request resumes it.
+// Returns false when a stop was already recorded.
+func (m *Manager) RequestTaskStop(id string) (bool, error) {
+	m.taskStateMu.Lock()
+	defer m.taskStateMu.Unlock()
+	n, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		return false, err
+	}
+	var requested time.Time
+	var fresh bool
+	err = m.pg.QueryRow(`WITH previous AS (
+	    SELECT id, stop_requested_at IS NULL AS fresh FROM tasks
+	    WHERE id=$1 AND deleted_at IS NULL AND status NOT IN ('done','failed','timeout','stopped') FOR UPDATE
+	)
+	UPDATE tasks t SET stop_requested_at=COALESCE(t.stop_requested_at, now()), queued=false, queued_at=NULL
+	FROM previous WHERE t.id=previous.id
+	RETURNING t.stop_requested_at, previous.fresh`, n).Scan(&requested, &fresh)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, fmt.Errorf("task %s has already finished", id)
+	}
+	if err != nil {
+		return false, err
+	}
+	m.mu.Lock()
+	if t := m.tasks[id]; t != nil {
+		t.updateLifecycle(func(state *taskLifecycleState) {
+			state.StopRequestedAt = requested.Unix()
+			state.Queued = false
+			state.QueuedAt = 0
+		})
+	}
+	m.mu.Unlock()
+	return fresh, nil
 }
 
 // ApplyTaskPause atomically removes a task from the admission queue and records
@@ -1270,7 +1320,7 @@ func (m *Manager) ApplyTaskPause(id string) error {
 	err = m.pg.QueryRow(`UPDATE tasks
 		SET paused=true, queued=false, queued_at=NULL
 		WHERE id=$1 AND deleted_at IS NULL AND paused=false
-		  AND status NOT IN ('done','failed','timeout')
+		  AND status NOT IN ('done','failed','timeout','stopped')
 		RETURNING COALESCE(queue_mode,'')`, n).Scan(&mode)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("task %s is unavailable for pause", id)

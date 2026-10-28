@@ -241,6 +241,9 @@ func (e *Engine) completeTask(ctx context.Context, t *Task, run *completionRun) 
 		failureKind = "configuration"
 	} else if run.timedOut && e.IsPaused(t.ID) {
 		reason = "the task reached its absolute deadline while paused; no final completion verification was run"
+		if t.lifecycleSnapshot().StopRequestedAt > 0 {
+			reason = "the task was stopped while paused; no final completion verification was run"
+		}
 	} else {
 		e.emitActivity(t, db.Activity{Worker: "planner", Kind: "round", Summary: fmt.Sprintf("Read-only final completion verification (round %d)", e.nextPlannerRound(t.ID))})
 		e.BeginLLMCall(t.ID)
@@ -273,6 +276,9 @@ func (e *Engine) completeTask(ctx context.Context, t *Task, run *completionRun) 
 			return
 		}
 		status = "timeout"
+		if t.lifecycleSnapshot().StopRequestedAt > 0 {
+			status = "stopped"
+		}
 	}
 	// A timeout attempt may confirm evidence already complete at the deadline;
 	// ordinary attempts must yield to the absolute timeout coordinator.
@@ -373,10 +379,10 @@ func (e *Engine) quarantineCompletion(t *Task, run *completionRun) {
 	e.emitActivity(t, db.Activity{Worker: "system", Kind: "text", Summary: reason})
 }
 
-// Timeout supersedes a normal attempt, joins its cancellation, then uses the
+// Timeout (or a user stop) supersedes a normal attempt, joins its cancellation, then uses the
 // same durable checkpoint/review/commit protocol. Retry transient snapshot or
 // lock failures until the lifecycle changes or this runtime is shut down.
-func (e *Engine) settleTask(ctx context.Context, t *Task) {
+func (e *Engine) settleTask(ctx context.Context, t *Task, reason string) {
 	e.completionMu.Lock()
 	e.markSettling(t.ID)
 	if value, ok := e.completing.Load(t.ID); ok {
@@ -395,7 +401,7 @@ func (e *Engine) settleTask(ctx context.Context, t *Task) {
 			}
 			continue
 		}
-		err := e.requestCompletion(ctx, t, "task reached its absolute deadline", nil, true)
+		err := e.requestCompletion(ctx, t, reason, nil, true)
 		if err != nil && !errors.Is(err, db.ErrCompletionChanged) {
 			log.Printf("[completion] task %s timeout completion retry: %v", t.ID, err)
 		}

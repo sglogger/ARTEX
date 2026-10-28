@@ -5,7 +5,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
-import { ArchiveIcon, ArrowLeftIcon, BrainIcon, CheckIcon, CircleAlertIcon, PauseIcon, PlayIcon, RadioIcon } from "lucide-react";
+import { ArchiveIcon, ArrowLeftIcon, BrainIcon, CheckIcon, CircleAlertIcon, PauseIcon, PlayIcon, RadioIcon, SquareIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { StatusBadge } from "@/components/status-badge";
@@ -85,7 +85,7 @@ function TaskLLMControl({ task, profiles, onUpdated }: { task: Task; profiles: L
   const exhausted = task.llm_failover_state === "chain_exhausted";
   // The chain can be changed in any state, terminal states included: after a task ends the main agent conversation still uses this chain,
   // so when a model on the chain breaks it must be replaceable, or completed tasks can't be interacted with any more.
-  const terminal = ["done", "failed", "timeout"].includes(task.status);
+  const terminal = ["done", "failed", "timeout", "stopped"].includes(task.status);
   // A null active profile on an exhausted, non-empty chain is a persisted end
   // cursor. Keep the status display honest; choosing the first profile is only
   // the editor's reset draft and does not mean it is currently active.
@@ -220,6 +220,7 @@ function TaskDetailInner() {
   const id = searchParams.get("id") ?? "";
   const [task, setTask] = React.useState<Task | null>(null);
   const [paused, setPaused] = React.useState(false);
+  const [stopRequesting, setStopRequesting] = React.useState(false);
   const [loaded, setLoaded] = React.useState(false);
   const [tab, setTab] = React.useState("sessions");
   const [interceptPendingCount, setInterceptPendingCount] = React.useState(0);
@@ -288,7 +289,7 @@ function TaskDetailInner() {
   }, [load]);
 
   async function togglePause() {
-    if (task && ["done", "failed", "timeout"].includes(task.status)) return;
+    if (task && ["done", "failed", "timeout", "stopped"].includes(task.status)) return;
     const next = !paused;
     try {
       await api.controlTask(id, next ? "pause" : "resume");
@@ -296,6 +297,20 @@ function TaskDetailInner() {
       toast.success(next ? "Exploration paused" : "Exploration resumed");
     } catch (e) {
       toast.error("Operation failed: " + (e as Error).message);
+    }
+  }
+
+  async function stopTask() {
+    if (!task || stopRequesting) return;
+    setStopRequesting(true);
+    try {
+      await api.controlTask(id, "stop");
+      toast.success("Stopping: running work is wrapping up, then the task ends");
+      load();
+    } catch (e) {
+      toast.error(`Stop failed: ${(e as Error).message}`);
+    } finally {
+      setStopRequesting(false);
     }
   }
 
@@ -328,13 +343,14 @@ function TaskDetailInner() {
   }
 
   const completed = task.status === "done";
-  const terminal = ["done", "failed", "timeout"].includes(task.status);
+  const terminal = ["done", "failed", "timeout", "stopped"].includes(task.status);
   const archiveLifecycleEligible = terminal || paused || task.status === "paused";
   const canArchive = archiveLifecycleEligible && !task.archive_blocked_by_task_id;
   let archiveDisabledReason = task.queued ? "Queued tasks must be paused first" : "Running tasks must be paused first";
   if (archiveLifecycleEligible && task.archive_blocked_by_task_id) {
     archiveDisabledReason = `Task is directly inherited by unarchived task #${task.archive_blocked_by_task_id}; archive the dependent task first`;
   }
+  const stopping = !terminal && !!task.stop_requested_at;
   const engineMode = paused ? "paused" : (task.engine_mode ?? "idle");
   let controlVariant: "default" | "secondary" | "outline" = "outline";
   let controlIcon = <PauseIcon data-icon="inline-start" />;
@@ -406,7 +422,37 @@ function TaskDetailInner() {
               <TooltipContent>{archiveDisabledReason}</TooltipContent>
             </Tooltip>
           )}
-          <Button size="sm" variant={controlVariant} onClick={togglePause} disabled={terminal}>
+          {!terminal &&
+            (stopping ? (
+              <Button size="sm" variant="outline" disabled>
+                <Spinner data-icon="inline-start" />
+                Stopping…
+              </Button>
+            ) : (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button size="sm" variant="outline" disabled={stopRequesting}>
+                    <SquareIcon data-icon="inline-start" />
+                    Stop
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Stop task #{task.id}?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      No new work is started. Running workers get up to 90 seconds to wrap up and save their findings,
+                      then a final verification ends the task as stopped (or done if its goals are met). Unfinished
+                      intents are marked stopped. You can revive the task later by adding a goal or rerunning an intent.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => void stopTask()}>Stop task</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            ))}
+          <Button size="sm" variant={controlVariant} onClick={togglePause} disabled={terminal || stopping}>
             {controlIcon}
             {controlLabel}
           </Button>

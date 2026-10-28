@@ -57,6 +57,8 @@ var (
 		"The user clicked stop, deliberately aborting this turn's main agent or conversation agent run. Activity records already produced are kept, and you can keep sending the next message")
 	AbortChatPausedWithTask = cause("chat_paused_with_task", "Task paused; main agent turn aborted",
 		"When the user paused the task, the running main agent conversation was cancelled as well. Activity records already produced are kept; this turn's message is not replayed automatically after the task resumes")
+	AbortChatStoppedWithTask = cause("chat_stopped_with_task", "Task stopped; main agent turn aborted",
+		"When the user stopped the task, the running main agent conversation was cancelled as well. Activity records already produced are kept; the task is wrapping up and will not start new work")
 	AbortChatTurnFinished = cause("chat_turn_finished", "Conversation turn finished normally",
 		"This conversation turn finished normally and the server is releasing the turn's context resources. This is not a run interruption; if it appears in an interruption message, cancellation raced with the teardown event")
 

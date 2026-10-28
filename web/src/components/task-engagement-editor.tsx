@@ -37,7 +37,7 @@ export function TaskEngagementEditor({ task, onUpdated }: { task: Task; onUpdate
   const [goals, setGoals] = React.useState<GoalDraft[]>([]);
   const [constraints, setConstraints] = React.useState<ConstraintDraft[]>([]);
   const [scopes, setScopes] = React.useState<ScopeDraft[]>([]);
-  const canEdit = task.paused && !["done", "failed", "timeout"].includes(task.status);
+  const canEdit = task.paused && !["done", "failed", "timeout", "stopped"].includes(task.status);
 
   React.useEffect(() => {
     if (!open) return;

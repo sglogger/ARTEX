@@ -265,6 +265,9 @@ func (s *Server) restoreTaskRuntimes() {
 		// loop, so inactive tasks still get wrapped up when due after a restart (if the deadline has passed, the wrap-up sequence runs immediately).
 		if !isTerminalStatus(lifecycle.Status) {
 			s.engine.startDeadlineCoordinator(s.ctx, t)
+			if lifecycle.StopRequestedAt > 0 {
+				s.engine.startStop(s.ctx, t) // a stop was requested before the restart: finish wrapping up
+			}
 		}
 	}
 	// Restore every task that had already been admitted before shutdown. Starting

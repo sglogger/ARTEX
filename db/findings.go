@@ -332,7 +332,7 @@ func (d *DB) ListFindingGroups(f FindingFilter, page, pageSize int) ([]FindingGr
 	pageArgs := append(append([]any{}, args...), pageSize, (page-1)*pageSize)
 	query := fmt.Sprintf(`SELECT t.id, COALESCE(t.name,''), COALESCE(t.description,''), COALESCE(
 		CASE
-			WHEN t.status IN ('done','failed','timeout') THEN t.status
+			WHEN t.status IN ('done','failed','timeout','stopped') THEN t.status
 			WHEN t.queued THEN 'queued'
 			WHEN t.paused THEN 'paused'
 			ELSE t.status

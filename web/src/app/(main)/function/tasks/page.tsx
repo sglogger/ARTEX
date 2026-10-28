@@ -36,6 +36,7 @@ import {
   SaveIcon,
   SearchIcon,
   SlidersHorizontalIcon,
+  SquareIcon,
   StarIcon,
   TagsIcon,
   Trash2Icon,
@@ -237,6 +238,7 @@ const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
   { value: "done", label: "Done" },
   { value: "failed", label: "Failed" },
   { value: "timeout", label: "Timed out" },
+  { value: "stopped", label: "Stopped" },
 ];
 
 // Select doesn't accept an empty-string value, so "uncategorized" uses this sentinel in the filter, the create form and bulk move
@@ -247,7 +249,7 @@ const UNCATEGORIZED_VALUE = "uncategorized";
 // (done/failed/timeout are terminal); only paused can be resumed. Row buttons and bulk controls share this check,
 // so one can never be clickable while the other isn't.
 const PAUSABLE_STATUSES = new Set<TaskStatus>(["created", "queued", "running"]);
-const ARCHIVABLE_STATUSES = new Set<TaskStatus>(["paused", "done", "failed", "timeout"]);
+const ARCHIVABLE_STATUSES = new Set<TaskStatus>(["paused", "done", "failed", "timeout", "stopped"]);
 
 function taskControlAction(status: TaskStatus): "pause" | "resume" | null {
   if (status === "paused") return "resume";
@@ -322,7 +324,7 @@ export default function TasksPage() {
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(20);
   const [nowSec, setNowSec] = React.useState(() => Math.floor(Date.now() / 1000));
-  const [batchControlling, setBatchControlling] = React.useState<"pause" | "resume" | null>(null);
+  const [batchControlling, setBatchControlling] = React.useState<"pause" | "resume" | "stop" | null>(null);
   const [movingCategory, setMovingCategory] = React.useState(false);
 
   React.useEffect(() => {
@@ -680,6 +682,13 @@ export default function TasksPage() {
     () => selectedTasks.filter((task) => taskControlAction(task.status) === "resume").map((task) => task.id),
     [selectedTasks],
   );
+  const stoppableTaskIDs = React.useMemo(
+    () =>
+      selectedTasks
+        .filter((task) => !["done", "failed", "timeout", "stopped"].includes(task.status) && !task.stop_requested_at)
+        .map((task) => task.id),
+    [selectedTasks],
+  );
   const archivableTaskIDs = React.useMemo(
     () => selectedTasks.filter((task) => ARCHIVABLE_STATUSES.has(task.status) && !task.queued).map((task) => task.id),
     [selectedTasks],
@@ -706,7 +715,7 @@ export default function TasksPage() {
   }, [archivableTaskIDs, load]);
 
   const controlSelectedTasks = React.useCallback(
-    async (action: "pause" | "resume", ids: string[]) => {
+    async (action: "pause" | "resume" | "stop", ids: string[]) => {
       if (ids.length === 0 || batchControlling) return;
       if (ids.length > 100) {
         toast.error("At most 100 tasks can be controlled at once");
@@ -718,11 +727,12 @@ export default function TasksPage() {
         const succeeded = result.items.filter((item) => item.ok);
         const failed = result.items.filter((item) => !item.ok);
         if (succeeded.length > 0) {
-          toast.success(
-            action === "pause"
-              ? `Paused ${succeeded.length} tasks`
-              : `Resumed ${succeeded.length} tasks${succeeded.some((item) => item.queued) ? "; some are now queued" : ""}`,
-          );
+          const done = {
+            pause: `Paused ${succeeded.length} tasks`,
+            resume: `Resumed ${succeeded.length} tasks${succeeded.some((item) => item.queued) ? "; some are now queued" : ""}`,
+            stop: `Stopping ${succeeded.length} tasks; running work is wrapping up`,
+          };
+          toast.success(done[action]);
         }
         if (failed.length > 0) {
           const details = failed
@@ -734,7 +744,8 @@ export default function TasksPage() {
         lastRef.current = "";
         load();
       } catch (error) {
-        toast.error(`${action === "pause" ? "Bulk pause" : "Bulk resume"} failed: ${(error as Error).message}`);
+        const label = { pause: "Bulk pause", resume: "Bulk resume", stop: "Bulk stop" }[action];
+        toast.error(`${label} failed: ${(error as Error).message}`);
       } finally {
         setBatchControlling(null);
       }
@@ -876,6 +887,35 @@ export default function TasksPage() {
                       )}
                       Resume {resumableTaskIDs.length}
                     </Button>
+                  )}
+                  {stoppableTaskIDs.length > 0 && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button size="sm" variant="outline" disabled={batchControlling !== null}>
+                          {batchControlling === "stop" ? (
+                            <Spinner data-icon="inline-start" />
+                          ) : (
+                            <SquareIcon data-icon="inline-start" />
+                          )}
+                          Stop {stoppableTaskIDs.length}
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Stop {stoppableTaskIDs.length} tasks?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            No new work is started. Running workers get up to 90 seconds to wrap up, then each task ends as
+                            stopped (or done if its goals are met). Stopped tasks can be revived later.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => void controlSelectedTasks("stop", stoppableTaskIDs)}>
+                            Stop tasks
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   )}
                   {archivableTaskIDs.length > 0 && (
                     <ArchiveConfirmDialog

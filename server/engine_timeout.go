@@ -88,6 +88,37 @@ func (e *Engine) resetTimeoutRevival(taskID string) {
 	e.coordStarted.Delete(taskID)
 }
 
+// resetStopRevival clears the user-stop wrap-up gates after PostgreSQL has
+// committed stopped -> running (which also clears stop_requested_at). The task's
+// timeout clock is left alone: a stop does not grant a fresh time budget.
+func (e *Engine) resetStopRevival(taskID string) {
+	e.settling.Delete(taskID)
+	e.stopStarted.Delete(taskID)
+}
+
+// startStop runs the wrap-up sequence now on behalf of a user stop: the same
+// ordered settle as a reached deadline (no new intents, running workers drain
+// within the grace, final verification), committed as stopped unless the goals
+// are met. Deduplicated per task; on restart a recorded stop_requested_at
+// restarts it.
+func (e *Engine) startStop(ctx context.Context, t *Task) {
+	if t == nil {
+		return
+	}
+	e.deleteMu.RLock()
+	if e.IsDeleting(t.ID) {
+		e.deleteMu.RUnlock()
+		return
+	}
+	if _, loaded := e.stopStarted.LoadOrStore(t.ID, true); loaded {
+		e.deleteMu.RUnlock()
+		return
+	}
+	rt := e.registerTaskRoutines(ctx, t.ID, 1)
+	e.deleteMu.RUnlock()
+	runTaskRoutine(rt, func(loopCtx context.Context) { e.settleTask(loopCtx, t, "task stopped by the user") })
+}
+
 // stampFirstRun records first_run_at + deadline_at on the FIRST real run (LLM ready)
 // of a timeout task, once per process. No-op when the task has no timeout.
 func (e *Engine) stampFirstRun(t *Task) {
@@ -172,7 +203,7 @@ func (e *Engine) deadlineCoordinator(ctx context.Context, t *Task) {
 			}
 			continue
 		}
-		e.settleTask(ctx, t)
+		e.settleTask(ctx, t, "task reached its absolute deadline")
 		return
 	}
 }

@@ -42,7 +42,7 @@ type TaskDTO struct {
 	PinnedAt           string             `json:"pinned_at,omitempty"`
 	Description        string             `json:"description"`
 	Goal               string             `json:"goal"`
-	Status             string             `json:"status"` // created | running | paused | done | failed
+	Status             string             `json:"status"` // created | running | paused | done | failed | timeout | stopped
 	Completion         *TaskCompletionDTO `json:"completion,omitempty"`
 	CreatedAt          string             `json:"created_at"`
 	CreatedUnix        int64              `json:"created_unix"`       // created_at as unix seconds (for run-duration calc)
@@ -51,7 +51,8 @@ type TaskDTO struct {
 	LastActivity       int64              `json:"last_activity_unix"` // unix seconds of the last activity (0 if none)
 	Paused             bool               `json:"paused"`
 	Queued             bool               `json:"queued"`
-	Tokens             TokenTotalDTO      `json:"tokens"` // whole-task token consumption
+	StopRequestedAt    int64              `json:"stop_requested_at,omitempty"` // unix seconds; set on a live task = stop requested, wrapping up
+	Tokens             TokenTotalDTO      `json:"tokens"`                      // whole-task token consumption
 	GoalsTotal         int                `json:"goals_total"`
 	GoalsMet           int                `json:"goals_met"`
 	InFlight           int                `json:"in_flight"`                // number of running workers (intents with state=running)
@@ -128,6 +129,7 @@ func taskDTO(t *Task, status string) TaskDTO {
 		CreatedUnix:        t.CreatedAt,
 		CompletedAt:        completedRFC(lifecycle.CompletedAt),
 		CompletedUnix:      lifecycle.CompletedAt,
+		StopRequestedAt:    lifecycle.StopRequestedAt,
 		Paused:             lifecycle.Paused,
 		Queued:             lifecycle.Queued,
 		LLMProfileID:       llmState.ProfileID,

@@ -142,10 +142,38 @@ func (s *Server) applyTaskControlWithCause(t *Task, action string, pauseCause er
 		}
 		out.Queued = queued
 		out.Status = map[bool]string{true: "queued", false: "running"}[queued]
+	case "stop":
+		// Graceful stop: record it durably, then run the deadline wrap-up now.
+		// The task ends as stopped (done when its goals turn out to be met).
+		s.concMu.Lock()
+		defer s.concMu.Unlock()
+		current, exists := s.m.Task(t.ID)
+		if !exists || current != t || s.engine.IsDeleting(t.ID) {
+			return out, fmt.Errorf("task is being deleted and cannot be controlled")
+		}
+		if !s.engine.beginTaskOperation(t.ID) {
+			return out, fmt.Errorf("task is being deleted and cannot be controlled")
+		}
+		defer s.engine.decInflight(t.ID)
+		lifecycle := t.lifecycleSnapshot()
+		if isTerminalStatus(lifecycle.Status) {
+			return out, fmt.Errorf("task has already finished")
+		}
+		fresh, err := s.m.RequestTaskStop(t.ID)
+		if err != nil {
+			return out, err
+		}
+		if fresh {
+			s.cancelTaskChat(t.ID, agent.AbortChatStoppedWithTask)
+			s.engine.emitActivity(t, db.Activity{Worker: "system", Kind: "text", Summary: "Stop requested: wrapping up running work, then final verification"})
+		}
+		s.engine.startStop(s.ctx, t)
+		out.Paused, out.Status = lifecycle.Paused, "stopping"
+		go s.reconcileConcurrency()
 	default:
-		return out, fmt.Errorf("action must be pause|resume")
+		return out, fmt.Errorf("action must be pause|resume|stop")
 	}
-	log.Printf("[task] #%s %s", t.ID, map[string]string{"pause": "paused", "resume": "resumed"}[action])
+	log.Printf("[task] #%s %s", t.ID, map[string]string{"pause": "paused", "resume": "resumed", "stop": "stop requested"}[action])
 	return out, nil
 }
 
@@ -253,8 +281,8 @@ func (s *Server) controlTasksBatch(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "bad json: "+err.Error())
 		return
 	}
-	if req.Action != "pause" && req.Action != "resume" {
-		writeErr(w, 400, "action must be pause|resume")
+	if req.Action != "pause" && req.Action != "resume" && req.Action != "stop" {
+		writeErr(w, 400, "action must be pause|resume|stop")
 		return
 	}
 	taskIDs := normalizeBatchTaskIDs(req.TaskIDs)

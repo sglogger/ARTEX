@@ -147,6 +147,7 @@ type Engine struct {
 	stamped      sync.Map // taskID -> bool, whether first_run_at is stamped (only once per process)
 	inflight     sync.Map // taskID -> *int64, count of running planner.Plan + worker.Execute (used for drain)
 	coordStarted sync.Map // taskID -> bool, whether the deadline coordinator has started (dedup for Run/reload)
+	stopStarted  sync.Map // taskID -> bool, whether a user-stop wrap-up has started (dedup for the stop API/reload)
 
 	// resolve returns a task's dedicated planner/worker (wired by the server as the
 	// authoritative task-router). nil,nil means this task is deliberately unavailable
@@ -302,6 +303,7 @@ func (e *Engine) StopTask(taskID string) {
 	e.stamped.Delete(taskID)
 	e.inflight.Delete(taskID)
 	e.coordStarted.Delete(taskID)
+	e.stopStarted.Delete(taskID)
 	e.completionReplan.Delete(taskID)
 	e.deleteMu.Lock()
 	e.deleting.Delete(taskID)
