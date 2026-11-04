@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Autumn-27/artex/agent"
 	"github.com/Autumn-27/artex/db"
@@ -371,6 +372,9 @@ func (s *Server) reviveTask(t *Task) {
 	}
 }
 
+// goalDecomposeBackoff is the wait before each goal decomposition attempt.
+var goalDecomposeBackoff = []time.Duration{0, 10 * time.Second, 30 * time.Second}
+
 // createGoals materializes the goal node(s) under the task root (rel objective).
 // Decomposition is done ENTIRELY by the LLM (the project requires an LLM). There is
 // no rule-based fallback splitter — it only ever produced garbage (shredded URLs,
@@ -392,10 +396,32 @@ func (s *Server) createGoals(ctx context.Context, t *Task, emit func(db.Activity
 		as = s.m.Assets()
 	}
 	taskID, _ := strconv.ParseInt(t.ID, 10, 64)
-	s.engine.BeginLLMCall(t.ID)
 	goalRuntime := s.agentsForTask(t).runtime
-	decomposed := agent.DecomposeGoalsWithProvider(ctx, goalRuntime, s.m.dir, t.goalText(), t.descriptionText(), as, t.Store, taskID, goalRuntime.nonStreaming(), goalRuntime.maxTokens(), emit)
-	s.engine.EndLLMCall(t.ID)
+	var decomposed []agent.GoalSpec
+	// A failed decomposition is usually transient (timeout, overloaded endpoint).
+	// Retry before falling back: the fallback goal has no contract and has to be
+	// settled later by a separate call.
+	backoff := s.goalDecomposeBackoff
+	if backoff == nil {
+		backoff = goalDecomposeBackoff
+	}
+	for attempt, wait := range backoff {
+		if attempt > 0 {
+			log.Printf("[goals] task %s: goal decomposition produced nothing, retrying in %s (%d/%d)", t.ID, wait, attempt+1, len(backoff))
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(wait):
+			}
+		}
+		s.engine.BeginLLMCall(t.ID)
+		decomposed = agent.DecomposeGoalsWithProvider(ctx, goalRuntime, s.m.dir, t.goalText(), t.descriptionText(), as, t.Store, taskID, goalRuntime.nonStreaming(), goalRuntime.maxTokens(), emit)
+		s.engine.EndLLMCall(t.ID)
+		// Without a configured model there is nothing to retry.
+		if len(decomposed) > 0 || ctx.Err() != nil || !s.engine.ReadyFor(t) {
+			break
+		}
+	}
 	for _, g := range decomposed {
 		if strings.TrimSpace(g.Text) != "" {
 			specs = append(specs, goalSpec{Text: g.Text, VulnClass: g.VulnClass})
@@ -406,7 +432,7 @@ func (s *Server) createGoals(ctx context.Context, t *Task, emit func(db.Activity
 		// as a single goal so the task still has something to judge against. This is the
 		// only path that writes here — decomposed goals are already persisted by the tool.
 		if g := strings.TrimSpace(t.goalText()); g != "" {
-			log.Printf("[goals] task %s: LLM goal decomposition produced nothing, falling back to \"original goal as the single goal\"", t.ID)
+			log.Printf("[goals] task %s: LLM goal decomposition produced nothing, falling back to \"original goal as the single goal\"; its type and required checks are settled at the start of a planning round", t.ID)
 			origin, _ := t.Store.OriginFactID()
 			id, _ := t.Store.AddNode(db.KindGoal, map[string]any{"text": g, "goal_contract_pending": true}, 0, "open", "system", nil)
 			if origin > 0 && id > 0 {

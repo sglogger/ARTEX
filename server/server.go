@@ -27,6 +27,9 @@ type Server struct {
 	skillDir string // root directory for skill subdirectories
 	jwtKey   []byte // HS256 signing key loaded from / generated into dataDir/jwt.key
 
+	// goalDecomposeBackoff overrides the goal decomposition retry schedule (nil = default).
+	goalDecomposeBackoff []time.Duration
+
 	// authMu guards the first-run setup token, the cached password hash (tokens
 	// are signed with a key derived from it — see auth.go signingKey) and the
 	// failed-attempt limiter. initMu serialises /api/auth/init check-then-set.

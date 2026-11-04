@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 
@@ -372,8 +373,18 @@ func (p *Planner) Plan(ctx context.Context, taskID int64, as *db.AssetStore, ts 
 	// compaction. Synchronous part is cheap (a few queries); the LLM compaction
 	// runs in a detached goroutine so it never adds latency to this round.
 	p.compactor.OnPlannerRound(ctx, ts)
+	settler := NewGoalContractSettler(p.prov)
+	// A goal left without a contract (goal decomposition failed) can never be
+	// proven; settle it before planning so the round does not gather evidence that
+	// cannot count. On failure the goal stays pending and the next round retries.
+	if n, err := SettlePendingGoalContracts(ctx, ts, settler, goal, ""); err != nil {
+		log.Printf("[planner] task %d: settling the pending goal contract failed: %v", taskID, err)
+	} else if n > 0 && emit != nil {
+		emit(db.Activity{Worker: "planner", Kind: "text", Summary: fmt.Sprintf("Settled the type and required checks of %d goal(s) whose decomposition had failed", n)})
+	}
 	tsx := NewToolSet(ts, "planner")
 	tsx.SetGoalProofReviewer(NewGoalProofReviewer(p.prov))
+	tsx.SetGoalContractSettler(settler)
 	tsx.completionProposal, _ = ctx.Value(completionProposalKey{}).(*CompletionProposal)
 	tsx.SetFindingRecorder(p.findingRecorder)
 	if as != nil {

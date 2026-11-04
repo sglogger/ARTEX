@@ -2,6 +2,7 @@ package db
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -277,6 +278,44 @@ func (s *ExplorationStore) SetNodeState(id int64, state string) error {
 // error if no such goal exists in this exploration.
 func (s *ExplorationStore) UpdateGoalPayload(id int64, text, vulnclass string) error {
 	return s.editGoalPayload(id, text, vulnclass)
+}
+
+// SettleGoalContract saves the type and required checks of a goal that was
+// created without a contract (goal_contract_pending, the fallback when goal
+// decomposition failed). It only ever fills a pending contract and never
+// rewrites a settled one, so review cannot reinterpret a saved goal type.
+// Returns false when the goal is not (or no longer) pending.
+func (s *ExplorationStore) SettleGoalContract(ctx context.Context, id int64, goalType string, checks []string) (bool, error) {
+	if goalType != "inspection" && goalType != "outcome" {
+		return false, fmt.Errorf("goal_type must be inspection or outcome")
+	}
+	if goalType == "inspection" && len(checks) == 0 {
+		return false, fmt.Errorf("an inspection goal needs required_checks")
+	}
+	if checks == nil {
+		checks = []string{}
+	}
+	raw, err := json.Marshal(checks)
+	if err != nil {
+		return false, err
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE exploration_nodes SET payload=(payload - 'goal_contract_pending') || jsonb_build_object('goal_type',$3::text,'required_checks',$4::jsonb), content_version=content_version+1 WHERE id=$1 AND exploration_id=$2 AND kind='goal' AND payload->>'goal_contract_pending'='true'`, id, s.expID, goalType, string(raw))
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
+// GoalContractPending reports whether a goal still waits for its contract.
+func GoalContractPending(goal *Node) bool {
+	if goal == nil || goal.Kind != KindGoal {
+		return false
+	}
+	var p struct {
+		Pending bool `json:"goal_contract_pending"`
+	}
+	return json.Unmarshal(goal.Payload, &p) == nil && p.Pending
 }
 
 // DeleteGoal hard-deletes a goal node; scoped to kind='goal' so it can never drop

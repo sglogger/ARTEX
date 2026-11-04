@@ -21,6 +21,11 @@ Notable changes to this project are recorded in this file. The format follows [K
 
 ### Fixed
 
+- Fixed tasks looping for hours while trying to prove a goal. When goal decomposition failed (e.g. a model timeout), the raw task goal became the only goal without a contract (`goal_contract_pending`); `prove_goal` rejected every proof for it after a full review, and the planner kept starting near-identical work to gather more evidence (observed: 45 proof attempts and ~3 hours of planner/worker calls for "What is the RTT to 9.9.9.9?"). Now:
+  - goal decomposition is retried twice (after 10 and 30 seconds) before falling back;
+  - a goal without a contract gets its type and required checks from a separate, tool-free model call at the start of each planning round or on `prove_goal`, never from the planner that proves it; a settled contract is never rewritten;
+  - `prove_goal` answers a retry with unchanged goal and evidence versions from the previous verdict without another review call;
+  - after five consecutive rejected proof attempts on one goal the task is paused for review with the last rejection reason instead of continuing.
 - The task report tab no longer shows "No report yet" when loading fails. A failed request shows an error with a **Retry** button, and switching tasks remounts the tab, so a late response from the previous task can no longer replace the current task's report.
 - The task console stays live when the SSE stream is down (e.g. a reverse proxy buffers `text/event-stream`): while the live connection indicator is amber, the active session's transcript is re-fetched every 2 seconds and merged, so sent messages and replies appear without a manual refresh. With a healthy SSE connection nothing extra is polled.
 - Fixed overlapping columns on the task list at medium window widths. The table reacts to the width of the content area (container queries) and hides lower-priority columns first (token usage, created/run time, running workers, description, goal progress); the actions column is no longer a sticky overlay. At tablet widths (768–1279 px) the sidebar collapses to icon mode automatically and expands again at desktop width, while a manual toggle within the same range is kept. The MCP server grid uses at most three columns so transport badges no longer overflow.

@@ -126,6 +126,7 @@ type Engine struct {
 	completionMu     sync.Mutex
 	completing       sync.Map // taskID -> *completionRun; also the execution admission gate
 	completionReplan sync.Map // taskID -> rejected review reason, delivered to the next ordinary Planner round
+	proofLedgers     sync.Map // taskID -> *agent.ProofLedger: rejected prove_goal attempts across planner rounds
 
 	// Per-work control lets the planner kill a worker and lets the UI pause/cancel
 	// one intent without pausing the whole task. The done channel closes only after
@@ -305,6 +306,7 @@ func (e *Engine) StopTask(taskID string) {
 	e.coordStarted.Delete(taskID)
 	e.stopStarted.Delete(taskID)
 	e.completionReplan.Delete(taskID)
+	e.proofLedgers.Delete(taskID)
 	e.deleteMu.Lock()
 	e.deleting.Delete(taskID)
 	e.deleteMu.Unlock()
@@ -930,10 +932,15 @@ func (e *Engine) plannerLoop(ctx context.Context, t *Task) {
 				return
 			}
 		}
+		ledger := e.proofLedger(t.ID)
 		e.BeginLLMCall(t.ID)
 		proposal := new(agent.CompletionProposal)
-		met, reason, err := planner.Plan(agent.WithCompletionProposal(ectx, proposal), taskIDInt, e.m.assets, t.Store, t.goalText(), triggers, emit)
+		met, reason, err := planner.Plan(agent.WithProofLedger(agent.WithCompletionProposal(ectx, proposal), ledger), taskIDInt, e.m.assets, t.Store, t.goalText(), triggers, emit)
 		e.EndLLMCall(t.ID)
+		if goalID, fails, last, stuck := ledger.Exhausted(proofAttemptLimit); stuck && ectx.Err() == nil && !e.IsDeleting(t.ID) {
+			e.pauseForReview(t, fmt.Sprintf("Goal %d: %d consecutive prove_goal attempts were rejected (last reason: %s). Paused instead of repeating work and reviews that keep failing; check the goal and its evidence, then resume", goalID, fails, last))
+			return
+		}
 		if beforeErr == nil && ectx.Err() == nil && !e.IsDeleting(t.ID) {
 			after, digestErr := t.Store.ProgressDigest(ectx)
 			active, activeErr := t.Store.HasActiveIntent()
@@ -978,6 +985,16 @@ func (e *Engine) plannerLoop(ctx context.Context, t *Task) {
 		// Re-arm the heartbeat after every wake-up (edge or heartbeat): any planning trigger restarts this idle timer.
 		resetPlannerTimer(heartbeat, interval)
 	}
+}
+
+// proofAttemptLimit is how many consecutive rejected prove_goal attempts on one
+// goal a task may make before it is paused for review. A planner that cannot get a
+// goal accepted otherwise keeps starting near-identical work and reviews for hours.
+const proofAttemptLimit = 5
+
+func (e *Engine) proofLedger(taskID string) *agent.ProofLedger {
+	v, _ := e.proofLedgers.LoadOrStore(taskID, agent.NewProofLedger())
+	return v.(*agent.ProofLedger)
 }
 
 func (e *Engine) workerLoop(ctx context.Context, t *Task, name string) {

@@ -54,6 +54,7 @@ func compactIntents(ns []*db.Node, parentsOf, yieldsOf map[int64][]int64) []map[
 type ToolSet struct {
 	findingRecorder FindingRecorder
 	goalReviewer    GoalProofReviewer
+	contractSettler GoalContractSettler
 	as              *db.AssetStore   // asset store (optional; nil = asset tools not available)
 	cs              *db.CompanyStore // company store (optional)
 	ts              *db.ExplorationStore
@@ -1219,29 +1220,51 @@ func (t *ToolSet) proveGoal() actool.CoreTool {
 			if err != nil {
 				return actool.Errorf(err.Error()), nil
 			}
+			ledger := proofLedgerFrom(ctx)
+			// A goal without a saved contract can never accept evidence. Settle it with
+			// an independent call first instead of reviewing evidence that cannot count.
+			if db.GoalContractPending(snapshot.Goal) {
+				if err := t.settleGoalContract(ctx, snapshot); err != nil {
+					ledger.Fail(snapshot, "goal contract not settled: "+err.Error(), false)
+					return actool.Errorf(fmt.Sprintf("goal %d has no saved goal type and required checks yet, and settling them failed (%v). The system retries at the start of every planning round. Do not call prove_goal for this goal again in this round and do not start new work only to re-prove it; the saved evidence stays available.", goal, err)), nil
+				}
+				if snapshot, err = t.ts.GoalProofSnapshot(ctx, goal, ev); err != nil {
+					return actool.Errorf(err.Error()), nil
+				}
+			}
+			if prior := ledger.Rejected(snapshot); prior != "" {
+				ledger.Fail(snapshot, prior, true)
+				return actool.Errorf(fmt.Sprintf("goal %d with evidence %d was already rejected in exactly this version: %s. Repeating prove_goal with unchanged evidence cannot change the verdict and is not reviewed again; gather new evidence that closes the gap, prove with other evidence, or leave the goal open.", goal, ev, prior)), nil
+			}
 			verdict, err := t.goalReviewer(ctx, snapshot, a.Reason)
 			if err != nil {
+				ledger.Fail(snapshot, "review failed: "+err.Error(), false)
 				return actool.Errorf("goal evidence review failed; verdict not changed: " + err.Error()), nil
 			}
 			if verdict.Supported == nil || strings.TrimSpace(verdict.Reason) == "" || (verdict.GoalType != "outcome" && verdict.GoalType != "inspection") {
+				ledger.Fail(snapshot, "review returned no valid verdict", false)
 				return actool.Errorf("goal evidence review returned no valid verdict"), nil
 			}
 			var contract struct {
 				Type string `json:"goal_type"`
 			}
 			if json.Unmarshal(snapshot.Goal.Payload, &contract) != nil || (contract.Type != "" && contract.Type != verdict.GoalType) {
+				ledger.Fail(snapshot, "review cannot change the saved goal type", true)
 				return actool.Errorf("review cannot change the saved goal type"), nil
 			}
 			if err = t.ts.CommitGoalProof(ctx, snapshot, *verdict.Supported, t.worker, verdict.Reason); err != nil {
+				ledger.Fail(snapshot, err.Error(), true)
 				return actool.Errorf(err.Error()), nil
 			}
 			if !*verdict.Supported {
+				ledger.Fail(snapshot, verdict.Reason, true)
 				t.completionResultMu.Lock()
 				t.GoalMet = false
 				t.Reason = "goal evidence insufficient; required work must continue"
 				t.completionResultMu.Unlock()
 				return actool.Errorf("the evidence cannot support the goal being met: " + verdict.Reason + "; this review did not mark the goal met and required work must continue. An incorrect existing met can be corrected with reopen_goal."), nil
 			}
+			ledger.Succeed(goal)
 			// This is a completion proposal; the independent review commits status.
 			t.completionResultMu.Lock()
 			t.GoalMet = false
