@@ -97,7 +97,7 @@ function neutralize(txt, n) {
   const launchArgs = ['--no-sandbox', '--disable-dev-shm-usage', '--ignore-certificate-errors'];
   if (cfg.proxy) launchArgs.push(`--proxy-server=${cfg.proxy}`);
   const browser = await puppeteer.launch({
-    executablePath: cfg.chromium, headless: cfg.headless ? 'new' : false,
+    executablePath: cfg.chromium, headless: cfg.headless,
     args: launchArgs
   });
   const page = await browser.newPage();
@@ -105,7 +105,7 @@ function neutralize(txt, n) {
   // ---- WebSocket frame capture via CDP (fetch/XHR interception can't see WS) ----
   if (cfg.recordWs) {
     try {
-      const cdp = await page.target().createCDPSession();
+      const cdp = await page.createCDPSession();
       await cdp.send('Network.enable');
       const wsUrl = {}; // requestId -> url
       cdp.on('Network.webSocketCreated', e => { wsUrl[e.requestId] = e.url; });

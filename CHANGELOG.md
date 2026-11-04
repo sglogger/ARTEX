@@ -4,6 +4,13 @@ Notable changes to this project are recorded in this file. The format follows [K
 
 ## [Unreleased]
 
+### Security
+
+- Updated dependencies with known vulnerabilities (Dependabot):
+  - Web UI: Next.js 16.2.9 → 16.4.5 (fixes, among others, remote code execution in the image optimization API and `next/og`, and SSRF in image optimization) and the shadcn CLI 4.12 → 4.23 (pulls patched `@modelcontextprotocol/sdk`, `hono`, `undici`, `body-parser`, `proxy-addr`, `qs` and `zod`). Other transitive packages were updated to patched versions, and `minimatch` under `ts-morph` is pinned to 11.x through `overrides`. Still open: a low-severity `deepmerge` advisory in the shadcn CLI, for which no fixed version exists; it is only used by the CLI.
+  - `api-recon` skill: `puppeteer-core` 23 → 25 (fixes `extract-zip`, `basic-ftp`, `ip-address` and `zod`). `runtime_harvest.js` uses `headless: true` and `page.createCDPSession()`, which the new version expects.
+  - Go: `github.com/klauspost/compress` 1.18.6 → 1.18.7 (out-of-bounds write in s2).
+
 ### Fixed
 
 - Fixed a planner going in circles on a finished measurement (observed: "Ping 1.1.1.1 and measure the RTT" with the ping output already saved as a fact). Three causes:
