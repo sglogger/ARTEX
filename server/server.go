@@ -97,6 +97,9 @@ type Server struct {
 	provCacheMu   sync.Mutex
 	provByProfile map[int64]*provEntry
 	provCacheGen  uint64
+	// Quota histories survive provider cache invalidation. Key 0 belongs to the
+	// non-persisted global config; persisted profiles use their DB IDs.
+	requestLimiters map[int64]*agent.RequestLimiter
 
 	// llmHealth is the process-wide circuit-breaker state for LLM failover (rotation).
 	// It deliberately lives OUTSIDE the provider caches: rebuilding the chain
