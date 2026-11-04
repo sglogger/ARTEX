@@ -4,6 +4,10 @@ Notable changes to this project are recorded in this file. The format follows [K
 
 ## [Unreleased]
 
+### Fixed
+
+- A slow database during the final completion check was reported as "completion snapshot changed, replanning required" instead of a timeout: the snapshot step ran on the model's review time budget. It now has its own 30 s limit.
+
 ## [0.7.1] - 2026-11-04
 
 **Upgrade notes:** the pentest tools are part of the image, so rebuild or pull it (`docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build` for a local build). The image grows by about 1.6 GB. Updating only the binary through the UI does not add the tools.

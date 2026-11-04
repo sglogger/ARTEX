@@ -224,7 +224,12 @@ func (e *Engine) completeTask(ctx context.Context, t *Task, run *completionRun) 
 	}
 	reviewCtx, cancelReview := context.WithDeadline(ctx, reviewDeadline)
 	defer cancelReview()
-	current, err := e.m.pg.ReviewTaskCompletion(reviewCtx, run.attempt.TaskID, run.attempt.AttemptID, db.CompletionReviewPolicy{Budget: options.Duration, Profile: profile})
+	// The snapshot step is a short DB transaction and must not run on the model's review budget:
+	// a slow database would otherwise surface as a "changed snapshot". The stored review
+	// deadline still follows reviewDeadline through the policy budget.
+	snapCtx, cancelSnap := context.WithTimeout(ctx, 30*time.Second)
+	current, err := e.m.pg.ReviewTaskCompletion(snapCtx, run.attempt.TaskID, run.attempt.AttemptID, db.CompletionReviewPolicy{Budget: time.Until(reviewDeadline), Profile: profile})
+	cancelSnap()
 	if err != nil {
 		reason = fmt.Sprintf("completion snapshot changed, replanning required: %v", err)
 		failureKind = "snapshot"
