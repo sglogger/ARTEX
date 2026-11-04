@@ -4,6 +4,10 @@ Notable changes to this project are recorded in this file. The format follows [K
 
 ## [Unreleased]
 
+### Added
+
+- Professional report: the findings page and the task Report tab have a button that combines the findings of one or more tasks (plus checked findings) into a client-ready PDF with cover page, management summary, scope per task, methodology, severity definitions, findings overview and detailed findings. Options: minimum severity, statuses to leave out, merging duplicates through finding groups, English or German, and an optional hand-written management summary. The PDF is printed by headless Chromium (shipped in the Docker image; `ARTEX_CHROME` points to another one); without Chromium the HTML version is offered. API: `POST /api/reports/professional`, `GET /api/reports/professional/capabilities`.
+
 ## [0.6.0] - 2026-11-04
 
 No required upgrade steps. On first start the Researcher agent is created and the new tools are bound to the default agents once; bindings changed by hand stay as they are. Keys for VulnCheck, Wordfence and WPScan (and optionally NVD) are entered under System settings → Vulnerability intelligence sources; without them those sources are skipped. Lookup answers are cached under `data/vulnintel/`, which is part of the kept `./data` directory.

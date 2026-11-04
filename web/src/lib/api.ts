@@ -76,6 +76,7 @@ import type {
   PromptVar,
   PromptVersion,
   SessionTokenUsage,
+  ProfessionalReportRequest,
   Settings,
   VulnIntelSettings,
   Severity,
@@ -967,6 +968,38 @@ export const api = {
     ).then((r) => ({ ...r, deliveries: arr(r.deliveries) }));
   },
   notifyRetryDelivery: (id: number) => post<{ ok: boolean }>(`/notify/deliveries/${id}/retry`),
+  // Professional report (PDF or HTML) across tasks/findings; downloads the generated file.
+  professionalReportCapabilities: () => get<{ pdf: boolean }>(`/reports/professional/capabilities`),
+  professionalReport: async (req: ProfessionalReportRequest) => {
+    if (MOCK) throw new Error("not available in the demo");
+    const token = getToken();
+    const r = await fetch(`/api/reports/professional`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(req),
+    });
+    if (!r.ok) {
+      let msg = `report: ${r.status}`;
+      try {
+        const body = (await r.json()) as { error?: string };
+        if (body.error) msg = body.error;
+      } catch {
+        // non-JSON error body: keep the status text
+      }
+      throw new Error(msg);
+    }
+    const blob = await r.blob();
+    const disp = r.headers.get("Content-Disposition") ?? "";
+    const m = disp.match(/filename="?([^"]+)"?/);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = m?.[1] ?? `pentest-report.${req.format === "html" ? "html" : "pdf"}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
   report: async (task?: string) => {
     if (MOCK) return mockReport(task);
     const token = getToken();

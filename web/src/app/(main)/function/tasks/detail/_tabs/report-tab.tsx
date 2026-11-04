@@ -2,10 +2,11 @@
 
 import * as React from "react";
 
-import { CheckIcon, CopyIcon, FileTextIcon } from "lucide-react";
+import { CheckIcon, CopyIcon, FileDownIcon, FileTextIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Markdown } from "@/components/markdown";
+import { ProfessionalReportDialog } from "@/components/professional-report-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
@@ -23,6 +24,7 @@ function TaskReport({ taskId }: { taskId: string }) {
   const [state, setState] = React.useState<ReportState>({ status: "loading" });
   const [attempt, setAttempt] = React.useState(0);
   const [copied, setCopied] = React.useState(false);
+  const [proOpen, setProOpen] = React.useState(false);
   const report = state.status === "ready" ? state.text : "";
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt intentionally restarts the request after an explicit retry.
@@ -104,6 +106,9 @@ function TaskReport({ taskId }: { taskId: string }) {
           <FileTextIcon className="size-4" /> Penetration test report (Markdown)
         </CardTitle>
         <div className="flex gap-2">
+          <Button size="sm" onClick={() => setProOpen(true)}>
+            <FileDownIcon /> Professional report (PDF)
+          </Button>
           {report && (
             <Button size="sm" variant="outline" onClick={copy}>
               {copied ? <CheckIcon /> : <CopyIcon />} Copy
@@ -112,6 +117,7 @@ function TaskReport({ taskId }: { taskId: string }) {
         </div>
       </CardHeader>
       <CardContent>{content}</CardContent>
+      <ProfessionalReportDialog open={proOpen} onOpenChange={setProOpen} initialTaskIds={[taskId]} />
     </Card>
   );
 }

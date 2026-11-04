@@ -30,6 +30,7 @@ Issues for this fork are welcome. Some updates may turn out to be regressions; p
 - Dependencies with known vulnerabilities updated (Next.js 16.4.5, `puppeteer-core` 25 for the `api-recon` skill, `klauspost/compress` 1.18.7).
 - [Vulnerability intelligence](#vulnerability-intelligence-and-research-agent): agents look up known CVEs for detected versions in NVD, OSV, Wordfence and WPScan, with CISA / ENISA EU / VulnCheck KEV status and EPSS; every source can be switched off, and answers are cached locally.
 - Researcher agent with web search that main agent and planner can ask research questions, answering with cited sources.
+- [Professional report](#professional-report-pdf): one click combines findings of several tasks into a PDF with cover page, management summary, scope, methodology and detailed findings (English or German).
 - Check intents finish properly: a worker is reminded to save its check result, "Budget exhausted" is only shown when a budget ran out, and intents without a saved result no longer keep a task with proven goals open.
 - Update check and one-click update use the releases of this repository.
 
@@ -88,6 +89,19 @@ Asset data can be synced directly from [ScopeSentry](https://github.com/Autumn-2
 - Import with one click; assets are merged into the company's asset scope and go straight into the ARTEX asset graph for agents to explore.
 - Jobs keep running in the background; after leaving or refreshing the page you can check per-type progress, failure reasons, and source records in the history. Interrupted jobs can be resumed, and failed records can be retried on their own.
 - Fetched record counts and distinct asset changes are counted separately, and the raw JSON can be downloaded for each item, so partial success is not mistaken for full completion.
+
+## Professional report (PDF)
+
+**Professional report** on the findings page, and **Professional report (PDF)** in a task's Report tab, combine the findings of one or more tasks into a client-ready document:
+
+- Cover page with title, client, author, date, test period and classification; running header and footer with page numbers.
+- Management summary with overall risk, findings by severity and key findings, generated from the findings or written by you (Markdown).
+- Scope per task (description, goal, targets, period, status), methodology and severity rating definitions.
+- Findings overview and one detailed section per finding, including the reporter's write-up, affected assets and evidence.
+
+In the dialog you choose the tasks (findings checked on the findings page can be added), a minimum severity, which statuses to leave out (false positives, ignored and duplicates by default), whether duplicate findings are merged through the finding groups, and English or German. Cover details are remembered in the browser.
+
+The PDF is printed on the server by headless Chromium, which the Docker image ships with Playwright. Outside Docker, ARTEX looks for Playwright's Chromium, a system Chromium/Chrome, or the path in `ARTEX_CHROME`; without one, the dialog offers the HTML file, which prints to PDF from any browser. Finding texts are escaped and Markdown is rendered without raw HTML, and the page blocks all network requests, so content taken from a target cannot run in the renderer. API: `POST /api/reports/professional`.
 
 ## Vulnerability intelligence and research agent
 
@@ -321,6 +335,7 @@ Optional: `ARTEX_LLM_PROVIDER` / `ARTEX_LLM_MODEL` / `ARTEX_LLM_BASE_URL` / `ART
 | `ARTEX_SETUP_TOKEN` | Pins the first-run setup token instead of a random one printed to the log (this value is never logged). |
 | `ARTEX_ADMIN_PASSWORD` | Initialises the admin password at startup without `/setup` (8–72 bytes); ignored once a password exists. |
 | `ARTEX_CORS_ORIGINS` | Comma-separated browser origins allowed to call `/api` cross-origin (default: `next dev` on port 5173; `*` allows all). The embedded UI is same-origin and needs none. |
+| `ARTEX_CHROME` | Chromium/Chrome binary used to print the professional report to PDF (default: Playwright's Chromium, then a system install). |
 
 **Concurrency**: the number of work agents per task is configured in "System settings" (default 3).
 

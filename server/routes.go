@@ -188,6 +188,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/settings/vuln-intel/test", s.testVulnIntel)
 	mux.HandleFunc("DELETE /api/settings/vuln-intel/cache", s.clearVulnIntelCache)
 	mux.HandleFunc("GET /api/report", s.getReport)
+	mux.HandleFunc("POST /api/reports/professional", s.createProfessionalReport)
+	mux.HandleFunc("GET /api/reports/professional/capabilities", s.professionalReportCapabilities)
 	mux.HandleFunc("GET /api/chat/mentions", s.searchChatMentions)
 	mux.HandleFunc("POST /api/chat", s.chat)
 	mux.HandleFunc("POST /api/chat/upload", s.chatUpload) // method 1 file upload: stored in the conversation/task working directory uploads/

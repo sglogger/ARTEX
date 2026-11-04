@@ -10,6 +10,7 @@ import {
   ChevronRightIcon,
   ClockIcon,
   DownloadIcon,
+  FileTextIcon,
   InfoIcon,
   SearchIcon,
   ShieldAlertIcon,
@@ -19,6 +20,7 @@ import { toast } from "sonner";
 
 import { FindingCaseList } from "@/components/finding-case-list";
 import { FindingRetestDialog } from "@/components/finding-retest-dialog";
+import { ProfessionalReportDialog } from "@/components/professional-report-dialog";
 import { StatusBadge } from "@/components/status-badge";
 import { TablePagination } from "@/components/table-pagination";
 import { Button } from "@/components/ui/button";
@@ -257,6 +259,7 @@ export default function FindingsPage() {
   const [includeOriginals, setIncludeOriginals] = React.useState(false);
   const [reviewing, setReviewing] = React.useState(false);
   const [exporting, setExporting] = React.useState(false);
+  const [reportOpen, setReportOpen] = React.useState(false);
 
   const toggleSelected = React.useCallback((id: string, checked: boolean) => {
     setSelectedIds((prev) => {
@@ -981,6 +984,9 @@ export default function FindingsPage() {
             <Button size="sm" variant="outline" onClick={openExport}>
               <DownloadIcon /> Export
             </Button>
+            <Button size="sm" onClick={() => setReportOpen(true)}>
+              <FileTextIcon /> Professional report
+            </Button>
           </div>
         </div>
 
@@ -1234,6 +1240,12 @@ export default function FindingsPage() {
         </DialogContent>
       </Dialog>
 
+      <ProfessionalReportDialog
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+        initialTaskIds={task !== "all" && task !== "__unassigned__" ? [task] : []}
+        findingIds={[...selectedIds]}
+      />
       <Dialog open={exportOpen} onOpenChange={setExportOpen}>
         <DialogContent>
           <DialogHeader>

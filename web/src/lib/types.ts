@@ -952,6 +952,23 @@ export interface TrafficHost {
 }
 
 // ---- App settings (runtime toggles) ----
+/** Request body of POST /api/reports/professional. Findings of all listed tasks plus the listed findings are combined. */
+export interface ProfessionalReportRequest {
+  task_ids: string[];
+  finding_ids?: string[];
+  exclude_statuses?: string[];
+  min_severity?: "" | "info" | "low" | "medium" | "high" | "critical";
+  consolidated?: boolean;
+  include_evidence?: boolean;
+  title?: string;
+  client?: string;
+  author?: string;
+  classification?: string;
+  language?: "en" | "de";
+  summary?: string;
+  format?: "pdf" | "html";
+}
+
 /** One vulnerability intelligence source as returned by GET /api/settings/vuln-intel. Keys are never returned, only key_set. */
 export interface VulnIntelSource {
   id: string;
