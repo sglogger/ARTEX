@@ -561,6 +561,9 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS llm_chain_revision BIGINT NOT NULL DE
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
 -- User stop: the wrap-up ends the task as 'stopped' (or 'done' when the goals are met). Cleared when the task is revived.
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS stop_requested_at TIMESTAMPTZ;
+-- paused_at: when the current pause began; resuming moves deadline_at by the pause length,
+-- so a paused task does not spend its timeout budget.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ;
 ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_status_check;
 ALTER TABLE tasks ADD CONSTRAINT tasks_status_check
     CHECK (status IN ('created','running','paused','done','failed','timeout','stopped'));

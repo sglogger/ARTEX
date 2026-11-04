@@ -1213,8 +1213,11 @@ func (m *Manager) ApplyTaskAdmission(id, expectedStatus, status string, queued b
 	    END,
 	    deadline_at=CASE
 	        WHEN $6='timeout' AND $2 NOT IN ('done','failed','timeout','stopped') THEN NULL
+	        -- A pause does not spend the timeout budget: move the deadline by the pause length.
+	        WHEN t.paused_at IS NOT NULL AND t.deadline_at IS NOT NULL THEN t.deadline_at + (now() - t.paused_at)
 	        ELSE deadline_at
 	    END,
+	    paused_at=NULL,
 	    stop_requested_at=CASE
 	        WHEN $2 IN ('done','failed','timeout','stopped') THEN stop_requested_at
 	        ELSE NULL
@@ -1318,7 +1321,7 @@ func (m *Manager) ApplyTaskPause(id string) error {
 	}
 	var mode string
 	err = m.pg.QueryRow(`UPDATE tasks
-		SET paused=true, queued=false, queued_at=NULL
+		SET paused=true, paused_at=COALESCE(paused_at, now()), queued=false, queued_at=NULL
 		WHERE id=$1 AND deleted_at IS NULL AND paused=false
 		  AND status NOT IN ('done','failed','timeout','stopped')
 		RETURNING COALESCE(queue_mode,'')`, n).Scan(&mode)

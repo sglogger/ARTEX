@@ -23,6 +23,7 @@ Notable changes to this project are recorded in this file. The format follows [K
 
 ### Fixed
 
+- A paused task no longer spends its timeout budget. The task timeout used to be an absolute wall clock, so a long pause (user pause or pause for review) could end a task as timed out before or right after it resumed. The pause start is now saved (`tasks.paused_at`, added by the startup migration), resuming moves `deadline_at` by the pause length in the same statement, and the timeout coordinator waits while a task is paused. Tasks without a timeout are unchanged; tasks paused before the upgrade have no pause start and keep their old deadline. Idea adopted from [neouks/series](https://github.com/neouks/series).
 - Fixed tasks looping for hours while trying to prove a goal. When goal decomposition failed (e.g. a model timeout), the raw task goal became the only goal without a contract (`goal_contract_pending`); `prove_goal` rejected every proof for it after a full review, and the planner kept starting near-identical work to gather more evidence (observed: 45 proof attempts and ~3 hours of planner/worker calls for "What is the RTT to 9.9.9.9?"). Now:
   - goal decomposition is retried twice (after 10 and 30 seconds) before falling back;
   - a goal without a contract gets its type and required checks from a separate, tool-free model call at the start of each planning round or on `prove_goal`, never from the planner that proves it; a settled contract is never rewritten;

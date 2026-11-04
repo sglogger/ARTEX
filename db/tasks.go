@@ -439,7 +439,8 @@ func (d *DB) SetPaused(id int64, paused bool) error {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = tx.Exec(`UPDATE tasks SET paused=$1 WHERE id=$2`, paused, id); err != nil {
+	// The pause start is kept until admission resumes the task and moves deadline_at.
+	if _, err = tx.Exec(`UPDATE tasks SET paused=$1, paused_at=CASE WHEN $1 THEN COALESCE(paused_at, now()) ELSE paused_at END WHERE id=$2`, paused, id); err != nil {
 		return err
 	}
 	if !paused {

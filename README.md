@@ -473,6 +473,8 @@ flowchart LR
 
 The engine is an **event-driven** loop: any graph change wakes the planner, the planner dispatches intents, workers claim and execute intents and write back, and the write-back triggers the next round — until the goal is proven (`prove_goal`).
 
+A task timeout counts from the first real run. Pauses do not spend it: the pause start is saved (`paused_at`), resuming moves the deadline by the pause length, and a paused task is never ended by its timeout.
+
 Every goal is judged against a saved contract: `outcome` (an actual result must be obtained) or `inspection` (the listed `required_checks` must be completed). The goal decomposer saves it at task start; if decomposition fails it is retried, and a goal still without a contract gets one from a separate, tool-free model call at the start of the next planning round, so the planner never defines the contract it is proven against. Two brakes keep a task from spending tokens on proofs that cannot succeed: `prove_goal` does not review the same goal/evidence versions again once they were rejected, and after five consecutive rejected proof attempts on one goal the task is paused for review with the last reason (resume to continue). Independently, three planning rounds without new evidence and no work in flight also pause the run.
 
 ```mermaid

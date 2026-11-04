@@ -61,17 +61,17 @@ func (e *Engine) inflightCount(taskID string) int64 {
 
 // ---------- deadline ----------
 
-// taskDeadline returns the task's absolute deadline (unix). Prefers the in-process
-// map (stamped this session); falls back to the DB-loaded value (restart), seeding
-// the map. 0 = no timeout / not yet stamped.
+// taskDeadline returns the task's absolute deadline (unix). The lifecycle value
+// is authoritative: stamping and admission (which moves the deadline past a
+// pause) both write it. The in-process map is the fallback when the lifecycle has
+// none. 0 = no timeout / not yet stamped.
 func (e *Engine) taskDeadline(t *Task) int64 {
-	if v, ok := e.deadline.Load(t.ID); ok {
-		return v.(int64)
-	}
-	deadlineAt := t.lifecycleSnapshot().DeadlineAt
-	if deadlineAt > 0 {
+	if deadlineAt := t.lifecycleSnapshot().DeadlineAt; deadlineAt > 0 {
 		e.deadline.Store(t.ID, deadlineAt)
 		return deadlineAt
+	}
+	if v, ok := e.deadline.Load(t.ID); ok {
+		return v.(int64)
 	}
 	return 0
 }
@@ -175,7 +175,8 @@ func (e *Engine) startDeadlineCoordinator(ctx context.Context, t *Task) {
 }
 
 // deadlineCoordinator waits until the task's absolute deadline, then runs the settle
-// sequence. Absolute wall-clock: it keeps counting through pauses.
+// sequence. A paused task is never timed out: resuming moves the deadline by the
+// pause length (paused_at), so the coordinator just waits while the task is paused.
 func (e *Engine) deadlineCoordinator(ctx context.Context, t *Task) {
 	for {
 		select {
@@ -187,8 +188,8 @@ func (e *Engine) deadlineCoordinator(ctx context.Context, t *Task) {
 			return // already finished (goals met / failed) — nothing to time out
 		}
 		dl := e.taskDeadline(t)
-		if dl <= 0 {
-			if sleepCtx(ctx, deadlinePollInterval) { // not yet stamped (task hasn't really run)
+		if dl <= 0 || t.lifecycleSnapshot().Paused {
+			if sleepCtx(ctx, deadlinePollInterval) { // not yet stamped (task hasn't really run) or paused
 				return
 			}
 			continue
