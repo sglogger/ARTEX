@@ -4,6 +4,21 @@ Notable changes to this project are recorded in this file. The format follows [K
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-04
+
+**Upgrade notes:** on first start every existing task, chat and task category is moved into a new default project **Standard** (database migration runs automatically). Task category names are now unique per project instead of globally. API clients that should stay unfiltered need no change; sending `X-Artex-Project: <id>` (or `?project=<id>`) scopes lists to a project and creates new tasks and chats in it.
+
+### Added
+
+- Projects (engagements) bundle tasks, chats, task categories and, through their tasks, findings. The active project is chosen at the top of the sidebar; Dashboard, Tasks, Chat, Findings (list, groups, statistics, asset tree, finding cases, exports) and Assets then show only that project, and new tasks and chats are created in it. "All projects" shows everything.
+- Projects page to create projects (name, client, period, scope notes), edit, archive, reactivate, delete empty ones, and move tasks between projects. The default project cannot be deleted or archived. API: `GET`/`POST /api/projects`, `GET`/`PATCH`/`DELETE /api/projects/{id}`, `POST /api/projects/{id}/tasks`, `POST /api/conversations/{id}/project`.
+- Agents stay inside their project: the cross-task tools (`list_tasks`, `spawn_task`, `pause_task`, `get_task_graph` and the other task-id tools) and the finding evidence tools only reach tasks of the caller's project; spawned tasks join it, and linked (inherited) tasks must belong to the same project. Chats started by the system (reporter, finding review, retests, `ask_researcher`) are created in the project of their task.
+- The professional report fills title and client from the active project.
+
+### Known limitations
+
+- Traffic, LLM recordings, tool runs, approval history and token statistics are not filtered by project yet. Finding statistics of archived tasks are only counted under "All projects".
+
 ## [0.6.4] - 2026-11-04
 
 No upgrade steps. The `notes` and `report_edited_at` columns are added to `findings` on first start.

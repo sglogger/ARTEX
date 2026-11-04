@@ -30,6 +30,7 @@ Issues for this fork are welcome. Some updates may turn out to be regressions; p
 - Dependencies with known vulnerabilities updated (Next.js 16.4.5, `puppeteer-core` 25 for the `api-recon` skill, `klauspost/compress` 1.18.7).
 - [Vulnerability intelligence](#vulnerability-intelligence-and-research-agent): agents look up known CVEs for detected versions in NVD, OSV, Wordfence and WPScan, with CISA / ENISA EU / VulnCheck KEV status and EPSS; every source can be switched off, and answers are cached locally.
 - Researcher agent with web search that main agent and planner can ask research questions, answering with cited sources.
+- [Projects](#projects-engagements): bundle tasks, chats and findings per engagement, switch the active project in the sidebar, and keep agents inside their project.
 - [Professional report](#professional-report-pdf): one click combines findings of several tasks into a PDF with cover page, management summary, scope, methodology and detailed findings (English or German).
 - Check intents finish properly: a worker is reminded to save its check result, "Budget exhausted" is only shown when a budget ran out, and intents without a saved result no longer keep a task with proven goals open.
 - Update check and one-click update use the releases of this repository.
@@ -89,6 +90,20 @@ Asset data can be synced directly from [ScopeSentry](https://github.com/Autumn-2
 - Import with one click; assets are merged into the company's asset scope and go straight into the ARTEX asset graph for agents to explore.
 - Jobs keep running in the background; after leaving or refreshing the page you can check per-type progress, failure reasons, and source records in the history. Interrupted jobs can be resumed, and failed records can be retried on their own.
 - Fetched record counts and distinct asset changes are counted separately, and the raw JSON can be downloaded for each item, so partial success is not mistaken for full completion.
+
+## Projects (engagements)
+
+A project bundles everything that belongs to one assignment, so different clients or engagements stay apart:
+
+- **Switch** the active project at the top of the sidebar. Dashboard, Tasks, Chat, Findings (including groups, statistics, exports) and Assets then show only that project; **All projects** shows everything.
+- **New tasks and chats** are created in the active project. Chats the system starts itself (reporter, retests, `ask_researcher`) land in the project of their task.
+- **Projects page** (Projects in the sidebar): create projects with name, client, period and scope notes; open, edit, archive or reactivate them; delete empty ones; move existing tasks into a project (their findings follow; their category is cleared).
+- **Task categories** belong to a project; the same category name can exist in several projects.
+- **Assets and traffic** stay one shared store. Inside a project, the asset views show the assets of the project's tasks.
+- **Agents stay inside their project:** `list_tasks`, `spawn_task`, `get_task_graph` and the other cross-task tools only see tasks of the project of the chat or task they run in; a spawned task joins that project, and task inheritance only works within a project.
+- The **professional report** takes title and client from the active project.
+
+On the first start of 0.7.0 every existing task, chat and category is moved into the project **Standard**, which cannot be deleted or archived. Traffic, LLM recordings, tool runs, approval history and token statistics are not filtered by project yet.
 
 ## Professional report (PDF)
 
@@ -249,7 +264,7 @@ ARTEX_TARGETS=linux/amd64,windows/amd64 ./build.sh --release
 
 ## Upgrading
 
-The running version is shown as a pill in the top bar; click it to read the changelog of exactly that build (embedded from [`CHANGELOG.md`](CHANGELOG.md)). Local builds show the release they are based on, e.g. `v0.6.4 · local`.
+The running version is shown as a pill in the top bar; click it to read the changelog of exactly that build (embedded from [`CHANGELOG.md`](CHANGELOG.md)). Local builds show the release they are based on, e.g. `v0.7.0 · local`.
 
 > **Upgrading from 0.4.x to 0.5.x:** the port now binds to `127.0.0.1` by default. Set `ARTEX_BIND=0.0.0.0` in `.env` (Docker) or pass `-addr :8787` if ARTEX must stay reachable from other machines. Everyone has to log in once more after the upgrade. See the upgrade notes in the [CHANGELOG](CHANGELOG.md).
 
