@@ -277,7 +277,7 @@ Optional: `ARTEX_LLM_PROVIDER` / `ARTEX_LLM_MODEL` / `ARTEX_LLM_BASE_URL` / `ART
 
 The frontend and the API/SSE are all served from the same backend port (default `:8787`), and the live activity feed uses the **same origin** by default, so **`NEXT_PUBLIC_SSE_BASE` does not need to be set**; expose only 443 publicly and keep 8787 internal. Since the backend binds `127.0.0.1:8787` by default, a proxy on the same host can reach it unchanged; finish the initial `/setup` before making the instance public.
 
-SSE is a long-lived connection with continuous pushes, so the reverse proxy **must disable buffering**; otherwise the browser connects but never receives events (the activity feed keeps spinning). Nginx example:
+SSE is a long-lived connection with continuous pushes, so the reverse proxy **must disable buffering**; otherwise the browser connects but never receives events (the activity feed keeps spinning; the task console falls back to polling the transcript every 2 seconds, so it stays usable but slower). Nginx example:
 
 ```nginx
 server {

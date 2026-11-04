@@ -17,6 +17,9 @@ Notable changes to this project are recorded in this file. The format follows [K
 
 ### Fixed
 
+- The task report tab no longer shows "No report yet" when loading fails. A failed request shows an error with a **Retry** button, and switching tasks remounts the tab, so a late response from the previous task can no longer replace the current task's report.
+- The task console stays live when the SSE stream is down (e.g. a reverse proxy buffers `text/event-stream`): while the live connection indicator is amber, the active session's transcript is re-fetched every 2 seconds and merged, so sent messages and replies appear without a manual refresh. With a healthy SSE connection nothing extra is polled.
+- Fixed overlapping columns on the task list at medium window widths. The table reacts to the width of the content area (container queries) and hides lower-priority columns first (token usage, created/run time, running workers, description, goal progress); the actions column is no longer a sticky overlay. At tablet widths (768–1279 px) the sidebar collapses to icon mode automatically and expands again at desktop width, while a manual toggle within the same range is kept. The MCP server grid uses at most three columns so transport badges no longer overflow.
 - Tool calls with a drifted name (`bash`, `web_fetch`, `TODO_WRITE` instead of `Bash`, `WebFetch`, `TodoWrite`) no longer fail as "unknown tool". The tool registry folds case and `_`/`-` separators when exactly one tool matches, and dispatch continues under the canonical name, so intercept rules, the guard audit, wrap-up tool denials and permission rules apply exactly as for a correctly spelled call. This mainly helps OpenAI-compatible and open-weight models.
 
 ## [0.4.3] - 2026-10-27

@@ -4,7 +4,7 @@ import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { Slot } from "radix-ui"
 
-import { useIsMobile } from "@/hooks/use-mobile"
+import { useIsMobile, useIsTablet } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -66,6 +66,7 @@ function SidebarProvider({
   onOpenChange?: (open: boolean) => void
 }) {
   const isMobile = useIsMobile()
+  const isTablet = useIsTablet()
   const [openMobile, setOpenMobile] = React.useState(false)
 
   // This is the internal state of the sidebar.
@@ -86,6 +87,27 @@ function SidebarProvider({
     },
     [setOpenProp, open]
   )
+
+  // At tablet widths (768-1279px) collapse the sidebar to icon mode to give the content
+  // room, and expand it again when the window widens to desktop. Mobile (<768px) uses the
+  // offcanvas sheet and is left alone.
+  //
+  // On first load it only collapses at tablet width; at desktop width the choice saved in
+  // the cookie is respected. Afterwards it switches only when crossing the desktop/tablet
+  // boundary, so a manual toggle within the same range is never overridden.
+  const prevIsTablet = React.useRef<boolean | undefined>(undefined)
+  React.useEffect(() => {
+    if (isTablet === undefined || isMobile) {
+      prevIsTablet.current = isTablet
+      return
+    }
+    if (prevIsTablet.current === undefined) {
+      if (isTablet) setOpen(false)
+    } else if (prevIsTablet.current !== isTablet) {
+      setOpen(!isTablet)
+    }
+    prevIsTablet.current = isTablet
+  }, [isTablet, isMobile, setOpen])
 
   // Helper to toggle the sidebar.
   const toggleSidebar = React.useCallback(() => {

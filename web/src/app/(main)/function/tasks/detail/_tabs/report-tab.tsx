@@ -12,28 +12,40 @@ import { api } from "@/lib/api";
 import { copyText } from "@/lib/utils";
 
 export function ReportTab({ taskId }: { taskId: string }) {
-  const [report, setReport] = React.useState<string>("");
-  const [loading, setLoading] = React.useState(true);
-  const [copied, setCopied] = React.useState(false);
+  // A different task must never render or copy the previous task's report.
+  return <TaskReport key={taskId} taskId={taskId} />;
+}
 
+// A failed fetch is a state of its own, so it is never shown as "No report yet".
+type ReportState = { status: "loading" | "error" } | { status: "ready"; text: string };
+
+function TaskReport({ taskId }: { taskId: string }) {
+  const [state, setState] = React.useState<ReportState>({ status: "loading" });
+  const [attempt, setAttempt] = React.useState(0);
+  const [copied, setCopied] = React.useState(false);
+  const report = state.status === "ready" ? state.text : "";
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: attempt intentionally restarts the request after an explicit retry.
   React.useEffect(() => {
     let active = true;
-    setLoading(true);
+    setState({ status: "loading" });
     api
       .report(taskId)
       .then((text) => {
-        if (active) setReport(text);
+        if (active) setState({ status: "ready", text });
       })
       .catch(() => {
-        if (active) setReport("");
-      })
-      .finally(() => {
-        if (active) setLoading(false);
+        if (active) setState({ status: "error" });
       });
     return () => {
       active = false;
     };
-  }, [taskId]);
+  }, [taskId, attempt]);
+
+  function retry() {
+    setState({ status: "loading" });
+    setAttempt((current) => current + 1);
+  }
 
   async function copy() {
     if (!report) return;
@@ -48,11 +60,26 @@ export function ReportTab({ taskId }: { taskId: string }) {
   }
 
   let content: React.ReactNode;
-  if (loading) {
+  if (state.status === "loading") {
     content = (
-      <div className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed py-16 text-muted-foreground text-sm">
+      <div
+        role="status"
+        className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed py-16 text-muted-foreground text-sm"
+      >
         <FileTextIcon className="size-8 opacity-40" />
         Loading…
+      </div>
+    );
+  } else if (state.status === "error") {
+    content = (
+      <div
+        role="alert"
+        className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed py-16 text-sm"
+      >
+        <p>Could not load the report. Please try again.</p>
+        <Button size="sm" variant="outline" onClick={retry}>
+          Retry
+        </Button>
       </div>
     );
   } else if (report) {
