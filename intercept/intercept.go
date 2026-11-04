@@ -313,7 +313,11 @@ const (
 // Judge default values.
 const (
 	defaultJudgeTimeoutSecs      = 15
-	defaultJudgeFailAction       = "allow"
+	// A judge outage must not approve every call: escalate to a human by default.
+	defaultJudgeFailAction       = "ask"
+	// judgeAttempts is how often the judge is asked before the failure policy applies.
+	// Each attempt has its own timeout; an error or an invalid verdict counts as a failure.
+	judgeAttempts = 3
 	defaultJudgeAskTimeoutSecs   = 300
 	defaultJudgeAskTimeoutAction = "deny"
 )
@@ -460,17 +464,18 @@ func (i *Interceptor) Judge(ctx context.Context, tool string, arguments json.Raw
 		return Decision{}, false
 	}
 
-	cctx := ctx
-	if cfg.TimeoutSeconds > 0 {
-		var cancel context.CancelFunc
-		cctx, cancel = context.WithTimeout(ctx, time.Duration(cfg.TimeoutSeconds)*time.Second)
-		defer cancel()
+	withTimeout := func() (context.Context, context.CancelFunc) {
+		if cfg.TimeoutSeconds > 0 {
+			return context.WithTimeout(ctx, time.Duration(cfg.TimeoutSeconds)*time.Second)
+		}
+		return context.WithCancel(ctx)
 	}
 
-	input, contextErr := BuildReviewInput(cctx, tool, arguments)
+	buildCtx, cancelBuild := withTimeout()
+	input, contextErr := BuildReviewInput(buildCtx, tool, arguments)
+	cancelBuild()
 	cfg.Prompt = EffectiveJudgePrompt(cfg.Prompt)
 	var out Decision
-	var err error
 	var modelInput []byte
 	if contextErr != nil {
 		// Invalid current arguments cannot be reviewed faithfully, regardless of
@@ -478,16 +483,7 @@ func (i *Interceptor) Judge(ctx context.Context, tool string, arguments json.Raw
 		out = Decision{Action: "ask", ModelFallback: true, Message: "review context incomplete, human confirmation required: " + contextErr.Error()}
 	} else {
 		modelInput, _ = json.Marshal(input)
-		out, err = rv(cctx, cfg.ProfileID, cfg.Prompt, input)
-	}
-	if err != nil {
-		out = Decision{ProfileID: out.ProfileID, ModelFallback: true, Action: cfg.FailAction, Message: "model approval failed, applying failure policy: " + err.Error()}
-	}
-	switch out.Action {
-	case "allow", "ask", "deny":
-		// valid verdict
-	default:
-		out = Decision{ProfileID: out.ProfileID, ModelFallback: true, Action: cfg.FailAction, Message: "model output unparseable, applying failure policy"}
+		out = i.judgeWithRetry(ctx, rv, cfg, input, withTimeout)
 	}
 	// A model verdict never carries a rule; keep RuleID 0 (→ NULL) for history.
 	out.RuleID = 0
@@ -512,6 +508,36 @@ func (i *Interceptor) Judge(ctx context.Context, tool string, arguments json.Raw
 		out.TimeoutAction = cfg.AskTimeoutAction
 	}
 	return out, true
+}
+
+// judgeWithRetry asks the judge up to judgeAttempts times, each with its own
+// timeout. An error or a verdict other than allow/ask/deny counts as a failure;
+// after the last failure the configured FailAction applies.
+func (i *Interceptor) judgeWithRetry(ctx context.Context, rv Reviewer, cfg JudgeConfig, input ReviewInput, withTimeout func() (context.Context, context.CancelFunc)) Decision {
+	var failure string
+	var profileID int64
+	tried := 0
+	for tried < judgeAttempts {
+		tried++
+		actx, cancel := withTimeout()
+		out, err := rv(actx, cfg.ProfileID, cfg.Prompt, input)
+		cancel()
+		if out.ProfileID != 0 {
+			profileID = out.ProfileID
+		}
+		switch {
+		case err != nil:
+			failure = "model approval failed: " + err.Error()
+		case out.Action == "allow" || out.Action == "ask" || out.Action == "deny":
+			return out
+		default:
+			failure = "model output unparseable"
+		}
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	return Decision{ProfileID: profileID, ModelFallback: true, Action: cfg.FailAction, Message: fmt.Sprintf("%s (after %d attempts), applying failure policy", failure, tried)}
 }
 
 func judgeActionLabel(action string) string {

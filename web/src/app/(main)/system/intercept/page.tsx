@@ -200,7 +200,7 @@ const defaultJudge = (): JudgeConfig => ({
   profile_id: 0,
   prompt: "",
   timeout_seconds: 15,
-  fail_action: "allow",
+  fail_action: "ask",
   ask_timeout_seconds: 300,
   ask_timeout_action: "deny",
 });
@@ -386,7 +386,7 @@ function JudgeCard() {
                     }}
                   />
                 </Field>
-                <Field label="When the model fails (error / timeout / unparseable)">
+                <Field label="When the model fails 3 times in a row (error / timeout / unparseable)">
                   <Select value={cfg.fail_action} onValueChange={(v) => patch({ fail_action: v as JudgeConfig["fail_action"] })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>

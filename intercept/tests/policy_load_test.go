@@ -3,7 +3,9 @@
 package intercept
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -159,5 +161,53 @@ func TestJudgeConfigurationReadFailureDenies(t *testing.T) {
 	}
 	if dec, judged := ic.Judge(t.Context(), "Bash", []byte(`{}`)); !judged || dec.Action != "deny" || !strings.Contains(dec.Message, "llm_judge_enabled") {
 		t.Fatalf("unreadable judge configuration disabled fallback: %+v %v", dec, judged)
+	}
+}
+
+// A judge outage must not approve calls: every attempt is retried, and only after
+// the last failure the failure policy applies, which defaults to a human decision.
+func TestJudgeRetriesThenEscalatesToHuman(t *testing.T) {
+	d := policyDB(t)
+	policyExec(t, d, `INSERT INTO settings VALUES ('llm_judge_enabled', 'true')`)
+	ic := New(d)
+	calls := 0
+	ic.SetReviewer(func(context.Context, int64, string, ReviewInput) (Decision, error) {
+		calls++
+		return Decision{}, errors.New("context deadline exceeded")
+	})
+	dec, judged := ic.Judge(t.Context(), "Bash", []byte(`{"command":"id"}`))
+	if !judged || dec.Action != "ask" || !dec.ModelFallback || calls != judgeAttempts || !strings.Contains(dec.Message, "after 3 attempts") {
+		t.Fatalf("judge outage: %+v judged=%v calls=%d", dec, judged, calls)
+	}
+}
+
+func TestJudgeRetryAcceptsLaterValidVerdict(t *testing.T) {
+	d := policyDB(t)
+	policyExec(t, d, `INSERT INTO settings VALUES ('llm_judge_enabled', 'true')`)
+	ic := New(d)
+	calls := 0
+	ic.SetReviewer(func(context.Context, int64, string, ReviewInput) (Decision, error) {
+		calls++
+		if calls == 1 {
+			return Decision{Action: "maybe"}, nil // invalid verdict counts as a failure
+		}
+		return Decision{Action: "deny", Message: "destructive"}, nil
+	})
+	dec, judged := ic.Judge(t.Context(), "Bash", []byte(`{"command":"rm -rf /"}`))
+	if !judged || dec.Action != "deny" || dec.ModelFallback || calls != 2 {
+		t.Fatalf("retry verdict: %+v judged=%v calls=%d", dec, judged, calls)
+	}
+}
+
+func TestJudgeExplicitAllowFailurePolicyIsKept(t *testing.T) {
+	d := policyDB(t)
+	policyExec(t, d, `INSERT INTO settings VALUES ('llm_judge_enabled', 'true')`)
+	policyExec(t, d, `INSERT INTO settings VALUES ('llm_judge_fail_action', 'allow')`)
+	ic := New(d)
+	ic.SetReviewer(func(context.Context, int64, string, ReviewInput) (Decision, error) {
+		return Decision{}, errors.New("down")
+	})
+	if dec, judged := ic.Judge(t.Context(), "Bash", []byte(`{"command":"id"}`)); !judged || dec.Action != "allow" {
+		t.Fatalf("explicit allow policy not applied: %+v %v", dec, judged)
 	}
 }

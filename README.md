@@ -58,6 +58,7 @@ For the full list of feature changes, code organization changes, verification sc
 The global "Approval records" page, the in-task "Intercept approvals" tab, and approval cards in conversations can all be expanded to show details. The layout follows
 [AegisHook's approval detail component](https://github.com/RuoJi6/AegisHook/blob/main/web/src/components/CallDetail.vue), using ARTEX's own components and theme:
 
+**Model approval (command intercept → model judgment).** Tool calls that match no intercept rule can be judged by an LLM. The judge is asked up to three times, each attempt with its own timeout; an error or an unusable verdict counts as a failure. After the third failure the failure policy applies, which defaults to **escalate to manual approval**, so an outage of the judge model never approves calls on its own. Installations that explicitly saved "Allow" keep it.
 
 ## Asset sync (ScopeSentry)
 
