@@ -4,6 +4,10 @@ Notable changes to this project are recorded in this file. The format follows [K
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-04
+
+No required upgrade steps. On first start the Researcher agent is created and the new tools are bound to the default agents once; bindings changed by hand stay as they are. Keys for VulnCheck, Wordfence and WPScan (and optionally NVD) are entered under System settings → Vulnerability intelligence sources; without them those sources are skipped. Lookup answers are cached under `data/vulnintel/`, which is part of the kept `./data` directory.
+
 ### Added
 
 - Vulnerability intelligence tools for the agents: `vuln_lookup` checks a fingerprinted component version (WordPress core/plugin/theme, product or package) against NVD, OSV, Wordfence and WPScan, `cve_lookup` returns details for CVE/GHSA ids, and `kev_search` searches the known-exploited catalogs. Results carry CISA KEV, ENISA EU KEV and VulnCheck KEV listings and EPSS scores, are sorted with known-exploited issues first, and state per source whether it answered, so an empty list is no longer mistaken for "not affected". Previously a follow-up question about the CVEs of a detected WordPress version was answered from model memory with "no CVEs found"; the lookup now returns the affected and known-exploited core CVEs.

@@ -28,6 +28,9 @@ Issues for this fork are welcome. Some updates may turn out to be regressions; p
 - Goal reviews that also work with slow local models (e.g. via Ollama): more time and output tokens for the review, and error texts that keep the planner from going in circles.
 - Version pill in the top bar that opens the embedded changelog.
 - Dependencies with known vulnerabilities updated (Next.js 16.4.5, `puppeteer-core` 25 for the `api-recon` skill, `klauspost/compress` 1.18.7).
+- [Vulnerability intelligence](#vulnerability-intelligence-and-research-agent): agents look up known CVEs for detected versions in NVD, OSV, Wordfence and WPScan, with CISA / ENISA EU / VulnCheck KEV status and EPSS; every source can be switched off, and answers are cached locally.
+- Researcher agent with web search that main agent and planner can ask research questions, answering with cited sources.
+- Check intents finish properly: a worker is reminded to save its check result, "Budget exhausted" is only shown when a budget ran out, and intents without a saved result no longer keep a task with proven goals open.
 - Update check and one-click update use the releases of this repository.
 
 **Adopted from other ARTEX derivatives** (ported by hand and adapted to this code base, not merged):
@@ -230,7 +233,7 @@ ARTEX_TARGETS=linux/amd64,windows/amd64 ./build.sh --release
 
 ## Upgrading
 
-The running version is shown as a pill in the top bar; click it to read the changelog of exactly that build (embedded from [`CHANGELOG.md`](CHANGELOG.md)). Local builds show the release they are based on, e.g. `v0.5.1 · local`.
+The running version is shown as a pill in the top bar; click it to read the changelog of exactly that build (embedded from [`CHANGELOG.md`](CHANGELOG.md)). Local builds show the release they are based on, e.g. `v0.6.0 · local`.
 
 > **Upgrading from 0.4.x to 0.5.x:** the port now binds to `127.0.0.1` by default. Set `ARTEX_BIND=0.0.0.0` in `.env` (Docker) or pass `-addr :8787` if ARTEX must stay reachable from other machines. Everyone has to log in once more after the upgrade. See the upgrade notes in the [CHANGELOG](CHANGELOG.md).
 
