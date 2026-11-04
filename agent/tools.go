@@ -1073,6 +1073,26 @@ func (t *ToolSet) addOneIntent(ctx context.Context, it intentItem) (int64, error
 		priority = 5
 	}
 	anchors := pidList(it.AssetIDs)
+	// Unknown asset ids would otherwise surface as a raw foreign-key error; models mix them up with node ids.
+	if t.as != nil && len(anchors) > 0 {
+		found, err := t.as.GetByIDs(anchors)
+		if err != nil {
+			return 0, fmt.Errorf("asset lookup failed: %w", err)
+		}
+		known := make(map[int64]bool, len(found))
+		for _, a := range found {
+			known[a.ID] = true
+		}
+		var missing []string
+		for _, id := range anchors {
+			if !known[id] {
+				missing = append(missing, strconv.FormatInt(id, 10))
+			}
+		}
+		if len(missing) > 0 {
+			return 0, fmt.Errorf("asset_ids %s are not assets: asset_ids must be ids returned by list_assets, not exploration node ids (intents/facts/goals); omit asset_ids when the direction has no registered target asset", strings.Join(missing, ", "))
+		}
+	}
 	// Asset intercept: if an asset bound to the intent hits a system asset intercept rule, dispatching the intent is forbidden.
 	if t.as != nil && len(anchors) > 0 {
 		hits, err := t.as.CheckAssetsIntercept(t.taskID, anchors)

@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { StatusBadge } from "@/components/status-badge";
+import { intentStateKey } from "@/lib/status";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -1052,7 +1053,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
           <CardContent className="flex flex-col gap-2">
             {blocked.slice(0, 20).map((i) => (
               <div key={i.id} className="flex items-center gap-2 text-sm">
-                <StatusBadge domain="intent" value={i.state} />
+                <StatusBadge domain="intent" value={intentStateKey(i)} />
                 <span className="min-w-0 flex-1 truncate">{i.payload}</span>
                 <Button
                   size="sm"

@@ -5,11 +5,15 @@ package vulnintel
 import (
 	"context"
 	"encoding/json"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestCompareVersions(t *testing.T) {
@@ -283,5 +287,73 @@ func TestRequiredKeyIsSkipped(t *testing.T) {
 	cfg.Enabled = map[string]bool{SourceWordfence: false}
 	if ok, why := cfg.usable(SourceWordfence); ok || why != "disabled in settings" {
 		t.Errorf("disabled wordfence: %v %q", ok, why)
+	}
+}
+
+// A new Service on the same directory answers from disk without the network.
+func TestCacheSurvivesRestart(t *testing.T) {
+	dir := t.TempDir()
+	var calls int32
+	nvd := fakeNVD(t, &calls)
+	feeds := fakeFeeds(t)
+	defer feeds.Close()
+	cfg := Settings{Keys: map[string]string{SourceNVD: "k"}}
+	base := func(nvdURL string) map[string]string {
+		return map[string]string{SourceNVD: nvdURL, SourceCISAKEV: feeds.URL + "/cisa", SourceEUKEV: feeds.URL + "/eu", SourceEPSS: feeds.URL + "/epss"}
+	}
+	first := New(func() Settings { return cfg }, dir)
+	first.BaseURL = base(nvd.URL)
+	c := []Component{{Kind: "product", Name: "nginx", Version: "1.18.0"}}
+	if r := first.Lookup(context.Background(), c)[0]; len(r.Vulns) != 1 {
+		t.Fatalf("first lookup %+v", r)
+	}
+	nvd.Close() // the source is gone; only the disk cache can answer now
+	second := New(func() Settings { return cfg }, dir)
+	second.BaseURL = base(nvd.URL)
+	r := second.Lookup(context.Background(), c)[0]
+	if len(r.Vulns) != 1 || r.Sources[0].Status != "ok" || !r.Complete {
+		t.Fatalf("restart should answer from the disk cache: %+v", r)
+	}
+	if st := second.CacheStats(); st.Entries == 0 || st.Bytes == 0 || len(st.Feeds) == 0 {
+		t.Errorf("cache stats %+v", st)
+	}
+}
+
+// An expired entry is still served, marked stale, when the source fails.
+func TestStaleFallbackWhenSourceFails(t *testing.T) {
+	dir := t.TempDir()
+	var calls int32
+	nvd := fakeNVD(t, &calls)
+	cfg := Settings{Keys: map[string]string{SourceNVD: "k"}, Enabled: map[string]bool{SourceCISAKEV: false, SourceEUKEV: false, SourceEPSS: false}}
+	s := New(func() Settings { return cfg }, dir)
+	s.BaseURL = map[string]string{SourceNVD: nvd.URL}
+	c := []Component{{Kind: "product", Name: "nginx", Version: "1.18.0"}}
+	s.Lookup(context.Background(), c)
+	nvd.Close()
+	old := time.Now().Add(-48 * time.Hour)
+	_ = filepath.WalkDir(filepath.Join(dir, "cache"), func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			_ = os.Chtimes(p, old, old)
+		}
+		return nil
+	})
+	restarted := New(func() Settings { return cfg }, dir)
+	restarted.BaseURL = map[string]string{SourceNVD: nvd.URL}
+	r := restarted.Lookup(context.Background(), c)[0]
+	if len(r.Vulns) != 1 || r.Sources[0].Status != "stale" || !strings.Contains(r.Sources[0].Detail, "local cache") {
+		t.Fatalf("expected a stale answer: %+v", r)
+	}
+	// A source test must not be fooled by the cache.
+	if _, err := restarted.TestSource(context.Background(), SourceNVD, ""); err == nil {
+		t.Error("TestSource answered from the cache although NVD is down")
+	}
+	if err := restarted.ClearCache(); err != nil {
+		t.Fatal(err)
+	}
+	if st := restarted.CacheStats(); st.Files != 0 {
+		t.Errorf("cache not cleared: %+v", st)
+	}
+	if r := restarted.Lookup(context.Background(), c)[0]; r.Complete || r.Sources[0].Status != "error" {
+		t.Errorf("after clearing, the dead source must surface as an error: %+v", r.Sources)
 	}
 }

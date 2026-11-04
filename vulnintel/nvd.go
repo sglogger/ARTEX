@@ -12,7 +12,6 @@ import (
 
 const (
 	nvdBase     = "https://services.nvd.nist.gov/rest/json"
-	nvdCacheTTL = 6 * time.Hour
 	nvdPageSize = 2000
 	nvdMaxPages = 5
 )
@@ -207,15 +206,9 @@ const maxCPEProducts = 3
 
 // resolveCPE finds the CPE vendor/product pairs for a free-text product name.
 // preferTarget ("wordpress") favours CPEs whose target_sw names that platform.
-func (s *Service) resolveCPE(ctx context.Context, cfg Settings, name, vendor, preferTarget string) ([]cpeProduct, error) {
-	key := strings.ToLower(name + "|" + vendor + "|" + preferTarget)
-	s.mu.Lock()
-	ce, ok := s.cpeCache[key]
-	s.mu.Unlock()
-	var cands []cpeProduct
-	if ok && ce.fresh(24*time.Hour) {
-		cands = ce.val
-	} else {
+func (s *Service) resolveCPE(ctx context.Context, cfg Settings, name, vendor, preferTarget string) ([]cpeProduct, bool, error) {
+	key := strings.ToLower(name + "|" + vendor)
+	cands, stale, err := cached(ctx, s, "cpe", key, cpeTTL, func() ([]cpeProduct, error) {
 		// Exact product name across all vendors first; free-text search only when
 		// the name is not a CPE product (e.g. "slider revolution" vs slider_revolution).
 		vendorPart := "*"
@@ -259,12 +252,14 @@ func (s *Service) resolveCPE(ctx context.Context, cfg Settings, name, vendor, pr
 				agg[k].TargetSW = f[10]
 			}
 		}
+		out := []cpeProduct{}
 		for _, k := range order {
-			cands = append(cands, *agg[k])
+			out = append(out, *agg[k])
 		}
-		s.mu.Lock()
-		s.cpeCache[key] = cacheEntry[[]cpeProduct]{cands, time.Now()}
-		s.mu.Unlock()
+		return out, nil
+	})
+	if err != nil {
+		return nil, false, err
 	}
 	want := normalizeCPE(name)
 	score := func(c cpeProduct) int {
@@ -285,14 +280,14 @@ func (s *Service) resolveCPE(ctx context.Context, cfg Settings, name, vendor, pr
 	ranked := append([]cpeProduct(nil), cands...)
 	sort.SliceStable(ranked, func(i, j int) bool { return score(ranked[i]) > score(ranked[j]) })
 	if len(ranked) == 0 {
-		return nil, nil
+		return nil, stale, nil
 	}
 	best := ranked[0]
 	if best.Product != want && !strings.Contains(best.Product, want) && !strings.Contains(want, best.Product) {
-		return nil, nil // keyword hit on an unrelated product; don't guess
+		return nil, stale, nil // keyword hit on an unrelated product; don't guess
 	}
 	if best.Product != want || vendor != "" {
-		return []cpeProduct{best}, nil
+		return []cpeProduct{best}, stale, nil
 	}
 	var out []cpeProduct
 	for _, c := range ranked {
@@ -300,19 +295,19 @@ func (s *Service) resolveCPE(ctx context.Context, cfg Settings, name, vendor, pr
 			out = append(out, c)
 		}
 	}
-	return out, nil
+	return out, stale, nil
 }
 
 // nvdByProduct fetches every CVE whose applicability names part:vendor:product.
-func (s *Service) nvdByProduct(ctx context.Context, cfg Settings, p cpeProduct) ([]nvdCVE, error) {
+func (s *Service) nvdByProduct(ctx context.Context, cfg Settings, p cpeProduct) ([]nvdCVE, bool, error) {
 	match := fmt.Sprintf("cpe:2.3:%s:%s:%s", p.Part, p.Vendor, p.Product)
-	s.mu.Lock()
-	ce, ok := s.nvdCache[match]
-	s.mu.Unlock()
-	if ok && ce.fresh(nvdCacheTTL) {
-		return ce.val, nil
-	}
-	var out []nvdCVE
+	return cached(ctx, s, "nvd", match, answerTTL, func() ([]nvdCVE, error) {
+		return s.nvdFetchProduct(ctx, cfg, match)
+	})
+}
+
+func (s *Service) nvdFetchProduct(ctx context.Context, cfg Settings, match string) ([]nvdCVE, error) {
+	out := []nvdCVE{}
 	for page := 0; page < nvdMaxPages; page++ {
 		q := url.Values{
 			"virtualMatchString": {match},
@@ -330,17 +325,14 @@ func (s *Service) nvdByProduct(ctx context.Context, cfg Settings, p cpeProduct) 
 			break
 		}
 	}
-	s.mu.Lock()
-	s.nvdCache[match] = cacheEntry[[]nvdCVE]{out, time.Now()}
-	s.mu.Unlock()
 	return out, nil
 }
 
 // nvdLookup returns the CVEs affecting product version (all when version is empty).
-func (s *Service) nvdLookup(ctx context.Context, cfg Settings, p cpeProduct, version string) ([]Vuln, error) {
-	cves, err := s.nvdByProduct(ctx, cfg, p)
+func (s *Service) nvdLookup(ctx context.Context, cfg Settings, p cpeProduct, version string) ([]Vuln, bool, error) {
+	cves, stale, err := s.nvdByProduct(ctx, cfg, p)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	var out []Vuln
 	for _, c := range cves {
@@ -365,20 +357,22 @@ func (s *Service) nvdLookup(ctx context.Context, cfg Settings, p cpeProduct, ver
 		v.Affected = uniq(labels)
 		out = append(out, v)
 	}
-	return out, nil
+	return out, stale, nil
 }
 
-// NVDDetail fetches one CVE record by id.
-func (s *Service) nvdDetail(ctx context.Context, cfg Settings, id string) (*nvdCVE, error) {
-	var resp nvdResponse
-	if err := s.nvdGet(ctx, cfg, "/cves/2.0", url.Values{"cveId": {id}}, &resp); err != nil {
-		return nil, err
-	}
-	if len(resp.Vulnerabilities) == 0 {
-		return nil, nil
-	}
-	c := parseNVD(resp.Vulnerabilities[0].CVE)
-	return &c, nil
+// nvdDetail fetches one CVE record by id (nil when NVD does not know it).
+func (s *Service) nvdDetail(ctx context.Context, cfg Settings, id string) (*nvdCVE, bool, error) {
+	return cached(ctx, s, "nvd_cve", id, answerTTL, func() (*nvdCVE, error) {
+		var resp nvdResponse
+		if err := s.nvdGet(ctx, cfg, "/cves/2.0", url.Values{"cveId": {id}}, &resp); err != nil {
+			return nil, err
+		}
+		if len(resp.Vulnerabilities) == 0 {
+			return nil, nil
+		}
+		c := parseNVD(resp.Vulnerabilities[0].CVE)
+		return &c, nil
+	})
 }
 
 func firstNonEmpty(vals ...string) string {

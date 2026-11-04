@@ -102,39 +102,25 @@ type Service struct {
 	mu        sync.Mutex
 	clients   map[string]*http.Client
 	feeds     map[string]*feedCache
+	blobs     map[string]cachedBlob // lookup answers, mirrored to disk (cache.go)
 	nvdGate   rateGate
-	cpeCache  map[string]cacheEntry[[]cpeProduct]
-	nvdCache  map[string]cacheEntry[[]nvdCVE]
-	osvCache  map[string]cacheEntry[[]osvVuln]
-	wpsCache  map[string]cacheEntry[[]Vuln]
-	vcCache   map[string]cacheEntry[*KEVMark]
-	epssCache map[string]cacheEntry[*EPSS]
 	wordfence *wordfenceIndex
 	wfLoaded  time.Time
 }
 
-type cacheEntry[T any] struct {
-	val T
-	at  time.Time
-}
-
-func (c cacheEntry[T]) fresh(ttl time.Duration) bool { return !c.at.IsZero() && time.Since(c.at) < ttl }
-
 // New builds a service. cacheDir holds downloaded feeds (KEV catalogs, the
-// Wordfence feed) so restarts and short outages don't lose them; empty = memory only.
+// Wordfence feed) and lookup answers, so restarts and outages don't lose them;
+// empty = memory only.
 func New(settings func() Settings, cacheDir string) *Service {
-	return &Service{
-		settings:  settings,
-		cacheDir:  cacheDir,
-		clients:   map[string]*http.Client{},
-		feeds:     map[string]*feedCache{},
-		cpeCache:  map[string]cacheEntry[[]cpeProduct]{},
-		nvdCache:  map[string]cacheEntry[[]nvdCVE]{},
-		osvCache:  map[string]cacheEntry[[]osvVuln]{},
-		wpsCache:  map[string]cacheEntry[[]Vuln]{},
-		vcCache:   map[string]cacheEntry[*KEVMark]{},
-		epssCache: map[string]cacheEntry[*EPSS]{},
+	s := &Service{
+		settings: settings,
+		cacheDir: cacheDir,
+		clients:  map[string]*http.Client{},
+		feeds:    map[string]*feedCache{},
+		blobs:    map[string]cachedBlob{},
 	}
+	go s.prune()
+	return s
 }
 
 func (s *Service) base(source, def string) string {
@@ -262,12 +248,13 @@ func (s *Service) feed(ctx context.Context, cfg Settings, name, rawURL string, h
 			}
 		}
 	}
-	if fc.raw != nil && time.Since(fc.at) < ttl {
+	live := isLive(ctx)
+	if !live && fc.raw != nil && time.Since(fc.at) < ttl {
 		return fc.raw, false, nil
 	}
 	b, dlErr := s.download(ctx, cfg, rawURL, header)
 	if dlErr != nil {
-		if fc.raw != nil {
+		if fc.raw != nil && !live {
 			return fc.raw, true, nil
 		}
 		return nil, false, dlErr

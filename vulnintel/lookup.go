@@ -71,19 +71,13 @@ func (s *Service) lookupOne(ctx context.Context, cfg Settings, c Component) Comp
 	switch c.Kind {
 	case "wordpress_core", "wordpress_plugin", "wordpress_theme":
 		try(SourceWordfence, func() ([]Vuln, bool, error) { return s.wordfenceLookup(ctx, cfg, c.Kind, c.Name, c.Version) })
-		try(SourceWPScan, func() ([]Vuln, bool, error) {
-			vs, err := s.wpscanLookup(ctx, cfg, c.Kind, c.Name, c.Version)
-			return vs, false, err
-		})
+		try(SourceWPScan, func() ([]Vuln, bool, error) { return s.wpscanLookup(ctx, cfg, c.Kind, c.Name, c.Version) })
 		s.nvdComponent(ctx, cfg, c, &res, collect, status)
 		notApplicable(SourceOSV, "OSV has no WordPress ecosystem")
 	case "product":
 		s.nvdComponent(ctx, cfg, c, &res, collect, status)
 		if c.Ecosystem != "" {
-			try(SourceOSV, func() ([]Vuln, bool, error) {
-				vs, err := s.osvLookup(ctx, cfg, c.Name, c.Ecosystem, c.Version)
-				return vs, false, err
-			})
+			try(SourceOSV, func() ([]Vuln, bool, error) { return s.osvLookup(ctx, cfg, c.Name, c.Ecosystem, c.Version) })
 		} else {
 			notApplicable(SourceOSV, "no ecosystem given (set ecosystem to query OSV)")
 		}
@@ -91,10 +85,7 @@ func (s *Service) lookupOne(ctx context.Context, cfg Settings, c Component) Comp
 		if c.Ecosystem == "" {
 			status(SourceStatus{Source: SourceOSV, Status: "error", Detail: "ecosystem is required for kind=package (npm, PyPI, Packagist, Maven, Go, …)"})
 		} else {
-			try(SourceOSV, func() ([]Vuln, bool, error) {
-				vs, err := s.osvLookup(ctx, cfg, c.Name, c.Ecosystem, c.Version)
-				return vs, false, err
-			})
+			try(SourceOSV, func() ([]Vuln, bool, error) { return s.osvLookup(ctx, cfg, c.Name, c.Ecosystem, c.Version) })
 		}
 		notApplicable(SourceNVD, "packages are matched through OSV")
 	}
@@ -149,14 +140,15 @@ func (s *Service) nvdComponent(ctx context.Context, cfg Settings, c Component, r
 		return
 	}
 	var products []cpeProduct
+	var stale bool
 	var err error
 	switch c.Kind {
 	case "wordpress_core":
 		products = []cpeProduct{{Part: "a", Vendor: "wordpress", Product: "wordpress"}}
 	case "wordpress_plugin", "wordpress_theme":
-		products, err = s.resolveCPE(ctx, cfg, strings.ReplaceAll(c.Name, "-", " "), c.Vendor, "wordpress")
+		products, stale, err = s.resolveCPE(ctx, cfg, strings.ReplaceAll(c.Name, "-", " "), c.Vendor, "wordpress")
 	default:
-		products, err = s.resolveCPE(ctx, cfg, c.Name, c.Vendor, "")
+		products, stale, err = s.resolveCPE(ctx, cfg, c.Name, c.Vendor, "")
 	}
 	if err != nil {
 		collect(SourceNVD, nil, false, err)
@@ -170,16 +162,21 @@ func (s *Service) nvdComponent(ctx context.Context, cfg Settings, c Component, r
 	var all []Vuln
 	var cpes []string
 	for _, p := range products {
-		vs, err := s.nvdLookup(ctx, cfg, p, c.Version)
+		vs, old, err := s.nvdLookup(ctx, cfg, p, c.Version)
 		if err != nil {
 			collect(SourceNVD, all, false, err)
 			return
 		}
+		stale = stale || old
 		all = append(all, vs...)
 		cpes = append(cpes, fmt.Sprintf("cpe:2.3:%s:%s:%s", p.Part, p.Vendor, p.Product))
 	}
-	collect(SourceNVD, all, false, nil)
-	res.Sources[len(res.Sources)-1].Detail = "matched " + strings.Join(cpes, ", ")
+	collect(SourceNVD, all, stale, nil)
+	detail := "matched " + strings.Join(cpes, ", ")
+	if stale {
+		detail = "NVD unreachable, answered from the local cache; " + detail
+	}
+	res.Sources[len(res.Sources)-1].Detail = detail
 }
 
 // enrich adds KEV listings and EPSS scores to every CVE in vs.
@@ -220,16 +217,18 @@ func (s *Service) enrich(ctx context.Context, cfg Settings, vs []Vuln, status fu
 	} else {
 		n, checked := 0, 0
 		var lastErr error
+		anyStale := false
 		for _, id := range ids {
 			if checked >= vulnCheckCap {
 				break
 			}
 			checked++
-			mk, err := s.vulnCheckKEV(ctx, cfg, id)
+			mk, stale, err := s.vulnCheckKEV(ctx, cfg, id)
 			if err != nil {
 				lastErr = err
 				break
 			}
+			anyStale = anyStale || stale
 			if mk != nil {
 				v := &vs[at[id]]
 				v.KEV = append(v.KEV, *mk)
@@ -240,28 +239,35 @@ func (s *Service) enrich(ctx context.Context, cfg Settings, vs []Vuln, status fu
 		switch {
 		case lastErr != nil:
 			status(SourceStatus{Source: SourceVulnCheckKEV, Status: "error", Detail: lastErr.Error(), Count: n})
-		case checked < len(ids):
-			status(SourceStatus{Source: SourceVulnCheckKEV, Status: "ok", Count: n,
-				Detail: fmt.Sprintf("checked the first %d of %d CVEs", checked, len(ids))})
 		default:
-			status(SourceStatus{Source: SourceVulnCheckKEV, Status: "ok", Count: n})
+			st := SourceStatus{Source: SourceVulnCheckKEV, Status: "ok", Count: n}
+			if checked < len(ids) {
+				st.Detail = fmt.Sprintf("checked the first %d of %d CVEs", checked, len(ids))
+			}
+			if anyStale {
+				st.Status, st.Detail = "stale", strings.TrimSpace("answered from the local cache; "+st.Detail)
+			}
+			status(st)
 		}
 	}
 	if ok, why := cfg.usable(SourceEPSS); !ok {
 		status(SourceStatus{Source: SourceEPSS, Status: "skipped", Detail: why})
 		return
 	}
-	scores, err := s.epss(ctx, cfg, ids)
+	scores, stale, err := s.epss(ctx, cfg, ids)
 	for id, sc := range scores {
 		if i, ok := at[id]; ok {
 			vs[i].EPSS = sc
 		}
 	}
-	if err != nil {
+	switch {
+	case err != nil:
 		status(SourceStatus{Source: SourceEPSS, Status: "error", Detail: err.Error(), Count: len(scores)})
-		return
+	case stale:
+		status(SourceStatus{Source: SourceEPSS, Status: "stale", Detail: "EPSS unreachable, answered from the local cache", Count: len(scores)})
+	default:
+		status(SourceStatus{Source: SourceEPSS, Status: "ok", Count: len(scores)})
 	}
-	status(SourceStatus{Source: SourceEPSS, Status: "ok", Count: len(scores)})
 }
 
 // productKEV lists KEV rows that name the component but are not among the
@@ -329,13 +335,20 @@ func (s *Service) CVEDetails(ctx context.Context, ids []string) []CVEDetail {
 		id := strings.ToUpper(strings.TrimSpace(raw))
 		d := CVEDetail{ID: id}
 		status := func(st SourceStatus) { d.Sources = append(d.Sources, st) }
+		answered := func(src string, stale bool, n int, detail string) {
+			st := SourceStatus{Source: src, Status: "ok", Count: n, Detail: detail}
+			if stale {
+				st.Status, st.Detail = "stale", strings.TrimSpace("answered from the local cache; "+detail)
+			}
+			status(st)
+		}
 		if strings.HasPrefix(id, "CVE-") {
 			if ok, why := cfg.usable(SourceNVD); !ok {
 				status(SourceStatus{Source: SourceNVD, Status: "skipped", Detail: why})
-			} else if c, err := s.nvdDetail(ctx, cfg, id); err != nil {
+			} else if c, stale, err := s.nvdDetail(ctx, cfg, id); err != nil {
 				status(SourceStatus{Source: SourceNVD, Status: "error", Detail: err.Error()})
 			} else if c == nil {
-				status(SourceStatus{Source: SourceNVD, Status: "ok", Detail: "not in NVD"})
+				answered(SourceNVD, stale, 0, "not in NVD")
 			} else {
 				d.Found = true
 				d.Description, d.CVSS, d.Severity, d.Vector = c.Description, c.Score, c.Severity, c.Vector
@@ -346,17 +359,17 @@ func (s *Service) CVEDetails(ctx context.Context, ids []string) []CVEDetail {
 					aff = append(aff, fmt.Sprintf("%s:%s %s", mt.Vendor, mt.Product, mt.label()))
 				}
 				d.Affected = capList(uniq(aff), 15)
-				status(SourceStatus{Source: SourceNVD, Status: "ok", Count: 1})
+				answered(SourceNVD, stale, 1, "")
 			}
 		} else {
 			status(SourceStatus{Source: SourceNVD, Status: "not_applicable", Detail: "not a CVE id"})
 		}
 		if ok, why := cfg.usable(SourceOSV); !ok {
 			status(SourceStatus{Source: SourceOSV, Status: "skipped", Detail: why})
-		} else if o, err := s.osvByID(ctx, cfg, id); err != nil {
+		} else if o, stale, err := s.osvByID(ctx, cfg, id); err != nil {
 			status(SourceStatus{Source: SourceOSV, Status: "error", Detail: err.Error()})
 		} else if o == nil {
-			status(SourceStatus{Source: SourceOSV, Status: "ok", Detail: "not in OSV"})
+			answered(SourceOSV, stale, 0, "not in OSV")
 		} else {
 			v := o.vuln("")
 			d.Aliases = uniq(append(d.Aliases, append(o.Aliases, o.ID)...), id)
@@ -370,7 +383,7 @@ func (s *Service) CVEDetails(ctx context.Context, ids []string) []CVEDetail {
 			}
 			d.Affected = capList(uniq(d.Affected), 15)
 			d.ExploitRefs = uniq(append(d.ExploitRefs, v.ExploitRefs...))
-			status(SourceStatus{Source: SourceOSV, Status: "ok", Count: 1})
+			answered(SourceOSV, stale, 1, "")
 		}
 		cve := id
 		if !strings.HasPrefix(cve, "CVE-") {
@@ -408,6 +421,7 @@ func (s *Service) TestSource(ctx context.Context, source, key string) (string, e
 		cfg.Keys = keys
 	}
 	cfg.Enabled = map[string]bool{source: true}
+	ctx = withLive(ctx)
 	if info, ok := SourceByID(source); !ok {
 		return "", fmt.Errorf("unknown source %q", source)
 	} else if info.Key == "required" && cfg.key(source) == "" {
@@ -415,7 +429,7 @@ func (s *Service) TestSource(ctx context.Context, source, key string) (string, e
 	}
 	switch source {
 	case SourceNVD:
-		c, err := s.nvdDetail(ctx, cfg, "CVE-2021-44228")
+		c, _, err := s.nvdDetail(ctx, cfg, "CVE-2021-44228")
 		if err != nil {
 			return "", err
 		}
@@ -424,7 +438,7 @@ func (s *Service) TestSource(ctx context.Context, source, key string) (string, e
 		}
 		return "CVE-2021-44228 retrieved", nil
 	case SourceOSV:
-		o, err := s.osvByID(ctx, cfg, "GHSA-jfh8-c2jp-5v3q")
+		o, _, err := s.osvByID(ctx, cfg, "GHSA-jfh8-c2jp-5v3q")
 		if err != nil {
 			return "", err
 		}
@@ -439,10 +453,7 @@ func (s *Service) TestSource(ctx context.Context, source, key string) (string, e
 		}
 		return fmt.Sprintf("%d catalog entries loaded", len(ks.entries)), nil
 	case SourceVulnCheckKEV:
-		s.mu.Lock()
-		delete(s.vcCache, "CVE-2021-44228")
-		s.mu.Unlock()
-		mk, err := s.vulnCheckKEV(ctx, cfg, "CVE-2021-44228")
+		mk, _, err := s.vulnCheckKEV(ctx, cfg, "CVE-2021-44228")
 		if err != nil {
 			return "", err
 		}
@@ -451,7 +462,7 @@ func (s *Service) TestSource(ctx context.Context, source, key string) (string, e
 		}
 		return "CVE-2021-44228 found in VulnCheck KEV", nil
 	case SourceEPSS:
-		sc, err := s.epss(ctx, cfg, []string{"CVE-2021-44228"})
+		sc, _, err := s.epss(ctx, cfg, []string{"CVE-2021-44228"})
 		if err != nil {
 			return "", err
 		}
@@ -460,9 +471,6 @@ func (s *Service) TestSource(ctx context.Context, source, key string) (string, e
 		}
 		return fmt.Sprintf("EPSS for CVE-2021-44228: %.3f", sc["CVE-2021-44228"].Score), nil
 	case SourceWordfence:
-		s.mu.Lock()
-		s.wordfence = nil
-		s.mu.Unlock()
 		idx, err := s.loadWordfence(ctx, cfg)
 		if err != nil {
 			return "", err

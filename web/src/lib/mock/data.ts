@@ -3436,6 +3436,14 @@ export const vulnIntel: VulnIntelSettings = {
     { id: "wordfence", name: "Wordfence Intelligence", description: "WordPress core, plugin and theme vulnerabilities (feed v3, free API key).", url: "https://www.wordfence.com/threat-intel/", key: "required", enabled: true, key_set: true },
     { id: "wpscan", name: "WPScan", description: "WordPress core, plugin and theme vulnerabilities (free plan: 25 requests/day).", url: "https://wpscan.com/api", key: "required", enabled: false, key_set: false },
   ],
+  cache: {
+    files: 214,
+    bytes: 6_815_744,
+    oldest: "2026-11-01T08:00:00Z",
+    newest: "2026-11-04T15:30:00Z",
+    feeds: ["cisa_kev", "eu_kev", "wordfence"],
+    lookup_entries: 211,
+  },
 };
 
 export const settings: Settings = {

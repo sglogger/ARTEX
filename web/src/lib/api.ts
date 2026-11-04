@@ -922,6 +922,7 @@ export const api = {
   vulnIntel: () => get<VulnIntelSettings>(`/settings/vuln-intel`),
   setVulnIntel: (patch: { enabled?: Record<string, boolean>; keys?: Record<string, string | null> }) =>
     put<VulnIntelSettings>(`/settings/vuln-intel`, patch),
+  clearVulnIntelCache: () => del<VulnIntelSettings>(`/settings/vuln-intel/cache`),
   testVulnIntel: (source: string, key?: string) =>
     post<{ ok: boolean; detail?: string; error?: string; elapsed_ms?: number }>(`/settings/vuln-intel/test`, { source, key }),
 

@@ -105,11 +105,13 @@ Sources are switched on and off one by one under **System settings → Vulnerabi
 | --- | --- | --- |
 | NVD | optional (raises the rate limit from 5 to 50 requests per 30 s) | CVEs with CPE version ranges |
 | OSV.dev | none | Open source packages, including GitHub advisories |
-| CISA KEV, ENISA EU KEV | none | Exploited-in-the-wild catalogs, cached for 6 h under `data/vulnintel/` |
+| CISA KEV, ENISA EU KEV | none | Exploited-in-the-wild catalogs, refreshed every 6 h |
 | VulnCheck KEV | required | Extended KEV with exploit links |
 | FIRST EPSS | none | Exploit probability |
-| Wordfence Intelligence | required (free) | WordPress core, plugins and themes; feed v3, cached for 24 h |
-| WPScan | required (free plan: 25 requests/day) | WordPress core, plugins and themes; answers cached for 24 h |
+| Wordfence Intelligence | required (free) | WordPress core, plugins and themes; feed v3, refreshed every 24 h |
+| WPScan | required (free plan: 25 requests/day) | WordPress core, plugins and themes |
+
+Everything is cached locally under `data/vulnintel/`: downloaded feeds and every lookup answer (CPE resolution for 7 days, other answers for 24 hours), so restarts don't repeat rate-limited NVD queries. When a source is unreachable, the last cached answer is used and its status is `stale`; entries older than 30 days are removed. The settings card shows the cache size and can clear it; the **Test** button always asks the source itself.
 
 Lookups go through the web search egress proxy when one is set, never through the traffic recording proxy. The Researcher agent is created once on startup with web search enabled; its prompt, tools and run budget can be changed under **System → Agents**.
 

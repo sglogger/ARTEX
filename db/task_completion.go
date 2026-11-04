@@ -153,6 +153,21 @@ type completionNode struct {
 	Payload       map[string]any `json:"payload"`
 }
 
+// finishedWithoutCheckpoint reports an intent whose worker finished normally but saved
+// no check result, so FinalizeIntentResult recorded it as exhausted. The work itself is
+// done; only budget, timeout and partial/blocked exits still need a stop decision.
+func finishedWithoutCheckpoint(n completionNode) bool {
+	if n.State != "exhausted" {
+		return false
+	}
+	if _, has := n.Payload["checkpoint"]; has {
+		return false
+	}
+	end, _ := n.Payload["execution_end"].(map[string]any)
+	requested, _ := end["requested_state"].(string)
+	return requested == "done"
+}
+
 func completionInput(ctx context.Context, tx *sql.Tx, taskID int64, dispositions []CompletionDisposition) (CompletionInput, string, error) {
 	var input CompletionInput
 	var expID int64
@@ -210,7 +225,7 @@ func completionInput(ctx context.Context, tx *sql.Tx, taskID int64, dispositions
 				input.GoalsMet = false
 			}
 		}
-		if n.Kind != KindIntent || n.State == "done" {
+		if n.Kind != KindIntent || n.State == "done" || finishedWithoutCheckpoint(n) {
 			continue
 		}
 		summary, _ := n.Payload["summary"].(string)

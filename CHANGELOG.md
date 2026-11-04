@@ -9,6 +9,14 @@ Notable changes to this project are recorded in this file. The format follows [K
 - Vulnerability intelligence tools for the agents: `vuln_lookup` checks a fingerprinted component version (WordPress core/plugin/theme, product or package) against NVD, OSV, Wordfence and WPScan, `cve_lookup` returns details for CVE/GHSA ids, and `kev_search` searches the known-exploited catalogs. Results carry CISA KEV, ENISA EU KEV and VulnCheck KEV listings and EPSS scores, are sorted with known-exploited issues first, and state per source whether it answered, so an empty list is no longer mistaken for "not affected". Previously a follow-up question about the CVEs of a detected WordPress version was answered from model memory with "no CVEs found"; the lookup now returns the affected and known-exploited core CVEs.
 - Each source can be switched on and off and tested under System settings → Vulnerability intelligence sources, where the keys for NVD (optional), VulnCheck, Wordfence and WPScan are saved. API: `GET`/`PUT /api/settings/vuln-intel`, `POST /api/settings/vuln-intel/test`.
 - Researcher agent with web search, created once at startup. Main agent and planner delegate research questions to it with `ask_researcher` and get an answer with cited sources; each run is kept as a conversation of the Researcher.
+- Vulnerability intelligence is cached locally under `data/vulnintel/`: feeds and every lookup answer survive restarts, and an unreachable source answers from its last copy, marked `stale`. The settings card shows the cache size and clears it (`DELETE /api/settings/vuln-intel/cache`); source tests bypass the cache.
+
+### Fixed
+
+- A worker that finished a check intent without saving `record_fact.checkpoint` is reminded once to save the result before the run ends. Without a checkpoint the intent is recorded as `exhausted`.
+- Exhausted intents no longer all show "Budget exhausted". The task graph now says "No check result" when the worker finished but saved no checkpoint, "Partial result" for a partial or blocked checkpoint, and "Budget exhausted" only for step, time or wrap-up limits (`exit_reason` on task nodes).
+- A task whose goals were all proven no longer stays open because of intents whose workers finished without a checkpoint. They now count as completed work; intents cut off by budget or with partial results still need an explicit stop decision.
+- `add_intent` rejects asset ids that are not assets (for example an intent id) with a readable message instead of a database foreign-key error.
 
 ## [0.5.1] - 2026-11-04
 

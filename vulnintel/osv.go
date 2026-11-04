@@ -7,12 +7,10 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 )
 
 const (
-	osvBase     = "https://api.osv.dev/v1"
-	osvCacheTTL = 6 * time.Hour
+	osvBase = "https://api.osv.dev/v1"
 )
 
 // osvEcosystems maps common spellings to OSV's canonical ecosystem names.
@@ -141,16 +139,11 @@ func rangeLabel(intro, end string, inclusive bool) string {
 }
 
 // osvLookup queries OSV for one package version (all known issues when version is empty).
-func (s *Service) osvLookup(ctx context.Context, cfg Settings, name, ecosystem, version string) ([]Vuln, error) {
+func (s *Service) osvLookup(ctx context.Context, cfg Settings, name, ecosystem, version string) ([]Vuln, bool, error) {
 	ecosystem = NormalizeEcosystem(ecosystem)
 	key := ecosystem + "|" + name + "|" + version
-	s.mu.Lock()
-	ce, ok := s.osvCache[key]
-	s.mu.Unlock()
-	var all []osvVuln
-	if ok && ce.fresh(osvCacheTTL) {
-		all = ce.val
-	} else {
+	all, stale, err := cached(ctx, s, "osv", key, answerTTL, func() ([]osvVuln, error) {
+		all := []osvVuln{}
 		token := ""
 		for page := 0; page < 10; page++ {
 			q := map[string]any{"package": map[string]string{"name": name, "ecosystem": ecosystem}}
@@ -173,26 +166,29 @@ func (s *Service) osvLookup(ctx context.Context, cfg Settings, name, ecosystem, 
 				break
 			}
 		}
-		s.mu.Lock()
-		s.osvCache[key] = cacheEntry[[]osvVuln]{all, time.Now()}
-		s.mu.Unlock()
+		return all, nil
+	})
+	if err != nil {
+		return nil, false, err
 	}
 	out := make([]Vuln, 0, len(all))
 	for _, o := range all {
 		out = append(out, o.vuln(name))
 	}
-	return out, nil
+	return out, stale, nil
 }
 
 // osvByID fetches one OSV record (accepts CVE ids too, OSV resolves aliases).
-func (s *Service) osvByID(ctx context.Context, cfg Settings, id string) (*osvVuln, error) {
-	var o osvVuln
-	err := s.getJSON(ctx, cfg, http.MethodGet, s.base(SourceOSV, osvBase)+"/vulns/"+url.PathEscape(id), nil, nil, &o)
-	if isNotFound(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &o, nil
+func (s *Service) osvByID(ctx context.Context, cfg Settings, id string) (*osvVuln, bool, error) {
+	return cached(ctx, s, "osv_id", id, answerTTL, func() (*osvVuln, error) {
+		var o osvVuln
+		err := s.getJSON(ctx, cfg, http.MethodGet, s.base(SourceOSV, osvBase)+"/vulns/"+url.PathEscape(id), nil, nil, &o)
+		if isNotFound(err) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		return &o, nil
+	})
 }

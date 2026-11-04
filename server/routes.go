@@ -186,6 +186,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/settings/vuln-intel", s.getVulnIntel)
 	mux.HandleFunc("PUT /api/settings/vuln-intel", s.putVulnIntel)
 	mux.HandleFunc("POST /api/settings/vuln-intel/test", s.testVulnIntel)
+	mux.HandleFunc("DELETE /api/settings/vuln-intel/cache", s.clearVulnIntelCache)
 	mux.HandleFunc("GET /api/report", s.getReport)
 	mux.HandleFunc("GET /api/chat/mentions", s.searchChatMentions)
 	mux.HandleFunc("POST /api/chat", s.chat)

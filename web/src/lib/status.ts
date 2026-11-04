@@ -40,6 +40,10 @@ const intent: Record<string, StatusMeta> = {
   blocked: { label: "Errored", tone: "red" },
   // exhausted = cut off by the step/time budget with only partial results written back (not a fully explored direction).
   exhausted: { label: "Budget exhausted", tone: "violet" },
+  // exhausted variants by exit_reason (see intentStateKey): the worker finished a check without saving a result,
+  // or saved a partial/blocked result. Neither is a budget problem.
+  exhausted_no_checkpoint: { label: "No check result", tone: "amber" },
+  exhausted_partial: { label: "Partial result", tone: "violet" },
   // stopped = legacy soft-delete status (kept for historical data).
   stopped: { label: "Stopped", tone: "slate" },
   // deleted = the user soft-deleted this intent (node and lineage kept; reason in the delete_reason field).
@@ -126,4 +130,12 @@ export type StatusDomain = keyof typeof maps;
 
 export function statusMeta(domain: StatusDomain, key: string): StatusMeta {
   return maps[domain][key] ?? { label: key, tone: "neutral" };
+}
+
+/** Status key for an intent badge: exhausted is split by exit_reason so a missing check result does not read as "budget exhausted". */
+export function intentStateKey(n: { state: string; exit_reason?: string }): string {
+  if (n.state === "exhausted" && (n.exit_reason === "no_checkpoint" || n.exit_reason === "partial")) {
+    return `exhausted_${n.exit_reason}`;
+  }
+  return n.state;
 }

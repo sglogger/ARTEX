@@ -193,6 +193,9 @@ type TaskNodeDTO struct {
 	SourceTaskID string `json:"source_task_id,omitempty"`
 	Inherited    bool   `json:"inherited,omitempty"`
 	DeleteReason string `json:"delete_reason,omitempty"` // deletion reason for a soft-deleted intent (state='deleted')
+	// ExitReason explains an exhausted intent: no_checkpoint (the worker finished but saved
+	// no check result), partial (checkpoint partial/blocked) or budget (step/time limit, wrap-up).
+	ExitReason string `json:"exit_reason,omitempty"`
 }
 
 func taskNodeDTO(n *db.Node) TaskNodeDTO {
@@ -210,7 +213,33 @@ func taskNodeDTO(n *db.Node) TaskNodeDTO {
 		d.SourceTaskID = i64s(n.SourceTaskID)
 	}
 	d.Inherited = n.Inherited
+	if n.Kind == db.KindIntent && n.State == "exhausted" {
+		d.ExitReason = intentExitReason(n.Payload)
+	}
 	return d
+}
+
+// intentExitReason classifies why an intent ended exhausted, from the checkpoint and
+// the execution_end record written by FinalizeIntentResult.
+func intentExitReason(payload json.RawMessage) string {
+	var p struct {
+		Checkpoint *struct {
+			Result string `json:"result"`
+		} `json:"checkpoint"`
+		End *struct {
+			Requested string `json:"requested_state"`
+		} `json:"execution_end"`
+	}
+	if json.Unmarshal(payload, &p) != nil {
+		return ""
+	}
+	switch {
+	case p.Checkpoint != nil && (p.Checkpoint.Result == "partial" || p.Checkpoint.Result == "blocked"):
+		return "partial"
+	case p.Checkpoint == nil && p.End != nil && p.End.Requested == "done":
+		return "no_checkpoint"
+	}
+	return "budget"
 }
 
 // GoalDTO is a goal node with its payload unpacked into text/vulnclass — the shape

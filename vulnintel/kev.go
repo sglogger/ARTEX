@@ -18,7 +18,6 @@ const (
 	vulnCheckURL = "https://api.vulncheck.com/v3"
 	epssURL      = "https://api.first.org/data/v1/epss"
 	kevFeedTTL   = 6 * time.Hour
-	lookupTTL    = 24 * time.Hour
 	// vulnCheckCap bounds per-call VulnCheck requests; the API is queried per CVE.
 	vulnCheckCap = 40
 )
@@ -136,37 +135,33 @@ func (s *Service) kevCatalog(ctx context.Context, cfg Settings, source string) (
 }
 
 // vulnCheckKEV looks one CVE up in VulnCheck KEV (nil when not listed).
-func (s *Service) vulnCheckKEV(ctx context.Context, cfg Settings, cve string) (*KEVMark, error) {
+func (s *Service) vulnCheckKEV(ctx context.Context, cfg Settings, cve string) (*KEVMark, bool, error) {
 	cve = strings.ToUpper(cve)
-	s.mu.Lock()
-	ce, ok := s.vcCache[cve]
-	s.mu.Unlock()
-	if ok && ce.fresh(lookupTTL) {
-		return ce.val, nil
-	}
-	var resp struct {
-		Data []struct {
-			Name       string `json:"vulnerabilityName"`
-			Ransomware string `json:"knownRansomwareCampaignUse"`
-			DateAdded  string `json:"date_added"`
-			DueDate    string `json:"dueDate"`
-			XDB        []struct {
-				URL         string `json:"xdb_url"`
-				ExploitType string `json:"exploit_type"`
-			} `json:"vulncheck_xdb"`
-			ReportedExploitation []struct {
-				URL string `json:"url"`
-			} `json:"vulncheck_reported_exploitation"`
-		} `json:"data"`
-	}
-	header := map[string]string{"Authorization": "Bearer " + cfg.key(SourceVulnCheckKEV)}
-	if err := s.getJSON(ctx, cfg, http.MethodGet, s.base(SourceVulnCheckKEV, vulnCheckURL)+"/index/vulncheck-kev?cve="+url.QueryEscape(cve), header, nil, &resp); err != nil {
-		return nil, err
-	}
-	var m *KEVMark
-	if len(resp.Data) > 0 {
+	return cached(ctx, s, "vulncheck", cve, answerTTL, func() (*KEVMark, error) {
+		var resp struct {
+			Data []struct {
+				Name       string `json:"vulnerabilityName"`
+				Ransomware string `json:"knownRansomwareCampaignUse"`
+				DateAdded  string `json:"date_added"`
+				DueDate    string `json:"dueDate"`
+				XDB        []struct {
+					URL         string `json:"xdb_url"`
+					ExploitType string `json:"exploit_type"`
+				} `json:"vulncheck_xdb"`
+				ReportedExploitation []struct {
+					URL string `json:"url"`
+				} `json:"vulncheck_reported_exploitation"`
+			} `json:"data"`
+		}
+		header := map[string]string{"Authorization": "Bearer " + cfg.key(SourceVulnCheckKEV)}
+		if err := s.getJSON(ctx, cfg, http.MethodGet, s.base(SourceVulnCheckKEV, vulnCheckURL)+"/index/vulncheck-kev?cve="+url.QueryEscape(cve), header, nil, &resp); err != nil {
+			return nil, err
+		}
+		if len(resp.Data) == 0 {
+			return nil, nil
+		}
 		d := resp.Data[0]
-		m = &KEVMark{Catalog: SourceVulnCheckKEV, Name: d.Name, Ransomware: d.Ransomware, DateAdded: dateOnly(d.DateAdded), DueDate: dateOnly(d.DueDate)}
+		m := &KEVMark{Catalog: SourceVulnCheckKEV, Name: d.Name, Ransomware: d.Ransomware, DateAdded: dateOnly(d.DateAdded), DueDate: dateOnly(d.DueDate)}
 		for _, x := range d.XDB {
 			m.ExploitReferences = append(m.ExploitReferences, x.URL)
 		}
@@ -176,30 +171,37 @@ func (s *Service) vulnCheckKEV(ctx context.Context, cfg Settings, cve string) (*
 			}
 		}
 		m.ExploitReferences = capList(uniq(m.ExploitReferences), 5)
-	}
-	s.mu.Lock()
-	s.vcCache[cve] = cacheEntry[*KEVMark]{m, time.Now()}
-	s.mu.Unlock()
-	return m, nil
+		return m, nil
+	})
 }
 
-// epss fetches scores for CVE ids in batches.
-func (s *Service) epss(ctx context.Context, cfg Settings, ids []string) (map[string]*EPSS, error) {
+// epss fetches scores for CVE ids in batches; each id is cached on its own. When
+// the API fails, cached scores are used and stale is set; err only when an id has
+// neither a fresh answer nor a cached one.
+func (s *Service) epss(ctx context.Context, cfg Settings, ids []string) (map[string]*EPSS, bool, error) {
 	out := map[string]*EPSS{}
+	fallback := map[string]*EPSS{}
 	var missing []string
-	s.mu.Lock()
-	for _, id := range ids {
+	for _, id := range uniq(ids) {
 		id = strings.ToUpper(id)
-		if ce, ok := s.epssCache[id]; ok && ce.fresh(lookupTTL) {
-			if ce.val != nil {
-				out[id] = ce.val
-			}
-			continue
+		var sc *EPSS
+		found, fresh := false, false
+		if !isLive(ctx) {
+			found, fresh = s.cacheGet("epss", id, answerTTL, &sc)
 		}
-		missing = append(missing, id)
+		switch {
+		case found && fresh:
+			if sc != nil {
+				out[id] = sc
+			}
+		case found:
+			fallback[id] = sc
+			missing = append(missing, id)
+		default:
+			missing = append(missing, id)
+		}
 	}
-	s.mu.Unlock()
-	missing = uniq(missing)
+	stale := false
 	for start := 0; start < len(missing); start += 50 {
 		end := min(start+50, len(missing))
 		batch := missing[start:end]
@@ -212,7 +214,16 @@ func (s *Service) epss(ctx context.Context, cfg Settings, ids []string) (map[str
 			} `json:"data"`
 		}
 		if err := s.getJSON(ctx, cfg, http.MethodGet, s.base(SourceEPSS, epssURL)+"?cve="+strings.Join(batch, ","), nil, nil, &resp); err != nil {
-			return out, err
+			for _, id := range missing[start:] {
+				sc, ok := fallback[id]
+				if !ok {
+					return out, stale, err
+				}
+				if sc != nil {
+					out[id] = sc
+				}
+			}
+			return out, true, nil
 		}
 		got := map[string]*EPSS{}
 		for _, d := range resp.Data {
@@ -220,16 +231,14 @@ func (s *Service) epss(ctx context.Context, cfg Settings, ids []string) (map[str
 			pc, _ := strconv.ParseFloat(d.Percentile, 64)
 			got[strings.ToUpper(d.CVE)] = &EPSS{Score: sc, Percentile: pc, Date: d.Date}
 		}
-		s.mu.Lock()
 		for _, id := range batch {
-			s.epssCache[id] = cacheEntry[*EPSS]{got[id], time.Now()}
+			s.cachePut("epss", id, got[id])
 			if got[id] != nil {
 				out[id] = got[id]
 			}
 		}
-		s.mu.Unlock()
 	}
-	return out, nil
+	return out, stale, nil
 }
 
 // KEVQuery filters kev_search.
@@ -277,7 +286,7 @@ func (s *Service) KEVSearch(ctx context.Context, q KEVQuery) KEVSearchResult {
 				if !strings.HasPrefix(t, "cve-") {
 					continue
 				}
-				m, err := s.vulnCheckKEV(ctx, cfg, t)
+				m, _, err := s.vulnCheckKEV(ctx, cfg, t)
 				if err != nil {
 					res.Sources = append(res.Sources, SourceStatus{Source: src, Status: "error", Detail: err.Error()})
 					n = -1

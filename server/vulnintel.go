@@ -308,7 +308,16 @@ func (s *Server) vulnIntelPayload() map[string]any {
 		on, ok := cfg.Enabled[src.ID]
 		out = append(out, vulnSourceDTO{SourceInfo: src, Enabled: !ok || on, KeySet: strings.TrimSpace(cfg.Keys[src.ID]) != ""})
 	}
-	return map[string]any{"sources": out}
+	return map[string]any{"sources": out, "cache": s.vulnIntel().CacheStats()}
+}
+
+// clearVulnIntelCache drops cached lookup answers and downloaded feeds.
+func (s *Server) clearVulnIntelCache(w http.ResponseWriter, r *http.Request) {
+	if err := s.vulnIntel().ClearCache(); err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 200, s.vulnIntelPayload())
 }
 
 func (s *Server) getVulnIntel(w http.ResponseWriter, r *http.Request) {

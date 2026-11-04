@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -577,7 +578,20 @@ type steerHooks struct {
 	limit int
 	// label looks like "worker-1 · #42" and is only used for logging.
 	label string
+	// checkpointMissing reports whether this intent is a check (check_key) that has no
+	// saved checkpoint yet; nil = not a check. checkpointNudged caps the reminder at one.
+	checkpointMissing func() bool
+	checkpointNudged  *atomic.Bool
 }
+
+// checkpointNudge is injected once when a worker ends a check intent without saving
+// record_fact.checkpoint: without one the intent is finalised as exhausted, which reads
+// as "budget exhausted" and blocks task completion although the work was done.
+const checkpointNudge = "[Checkpoint reminder] This intent is a check (it has check.target/mechanism), but no check result was saved, " +
+	"so it would end as exhausted (unverified) instead of done. Before finishing, call record_fact with intent_id and " +
+	"checkpoint={result: positive|negative|partial|blocked, scope: [what was actually covered], evidence: \"command + key output line\", " +
+	"gaps: [what was not covered; required for partial/blocked, empty for positive/negative], barrier: required for blocked}. " +
+	"Record only what you actually observed; then give your one-sentence conclusion."
 
 // Default number of continuations for idle turns (thinking only, no text and no tool call); matches the SDK's built-in
 // empty response retry default (emptyResponseRetries in norma/llm/openai.go). Both layers share the same
@@ -645,7 +659,17 @@ func (h steerHooks) Stop(ctx context.Context, messages []llm.Message) (bool, []s
 	}
 	// inner already decided to hard-stop, or is about to inject its own continuation → respect it, don't stack.
 	// limit<=0 = the user set "empty response retry count" to -1, i.e. explicitly turned this layer off.
-	if prevent || len(blocking) > 0 || h.nudges == nil || h.limit <= 0 || !isThinkingOnlyTurn(messages) {
+	if prevent || len(blocking) > 0 {
+		return prevent, blocking, msg
+	}
+	if !isThinkingOnlyTurn(messages) {
+		if h.checkpointMissing != nil && h.checkpointNudged != nil && h.checkpointMissing() && h.checkpointNudged.CompareAndSwap(false, true) {
+			log.Printf("[work %s] check intent ending without a checkpoint, injecting reminder", h.label)
+			return false, []string{checkpointNudge}, ""
+		}
+		return prevent, blocking, msg
+	}
+	if h.nudges == nil || h.limit <= 0 {
 		return prevent, blocking, msg
 	}
 	n := h.nudges.Add(1)
@@ -655,6 +679,18 @@ func (h steerHooks) Stop(ctx context.Context, messages []llm.Message) (bool, []s
 	}
 	log.Printf("[work %s] idle turn (thinking only, no text or tools), injecting continuation (%d/%d)", h.label, n, h.limit)
 	return false, []string{emptyTurnNudge}, ""
+}
+
+// intentNeedsCheckpoint reports whether an intent payload is a check without a saved checkpoint.
+func intentNeedsCheckpoint(payload json.RawMessage) bool {
+	var p struct {
+		CheckKey   string          `json:"check_key"`
+		Checkpoint json.RawMessage `json:"checkpoint"`
+	}
+	if json.Unmarshal(payload, &p) != nil || p.CheckKey == "" {
+		return false
+	}
+	return len(p.Checkpoint) == 0 || string(p.Checkpoint) == "null"
 }
 
 // KillWork cancels the in-flight work running intentID (planner's kill_work tool).
@@ -1099,6 +1135,11 @@ func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *ag
 		nudges: &atomic.Int64{},
 		limit:  e.emptyTurnNudgeLimit(),
 		label:  label,
+		checkpointMissing: func() bool {
+			n, err := t.Store.GetNode(iid)
+			return err == nil && n != nil && intentNeedsCheckpoint(n.Payload)
+		},
+		checkpointNudged: &atomic.Bool{},
 	}
 	wTaskID, _ := strconv.ParseInt(t.ID, 10, 64)
 	e.BeginLLMCall(t.ID)

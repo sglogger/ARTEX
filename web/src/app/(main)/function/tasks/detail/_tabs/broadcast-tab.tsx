@@ -29,7 +29,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
-import { type Tone, toneClasses, toneDot } from "@/lib/status";
+import { intentStateKey, type Tone, toneClasses, toneDot } from "@/lib/status";
 import { taskAssetTypeLabel } from "@/lib/task-assets";
 import type { Edge, ExploreKind, FindingAsset, NewAssetType, TaskNode } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -186,7 +186,7 @@ const clockFmt = new Intl.DateTimeFormat("en-US", {
 
 function NodeStateBadge({ node }: { node: TaskNode }) {
   if (node.type === "goal") return <StatusBadge domain="goal" value={node.state} dot />;
-  if (node.type === "intent") return <StatusBadge domain="intent" value={node.state} dot />;
+  if (node.type === "intent") return <StatusBadge domain="intent" value={intentStateKey(node)} dot />;
   const meta = STATE_META[node.type]?.[node.state];
   if (!meta) return null;
   return (

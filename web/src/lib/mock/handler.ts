@@ -2264,6 +2264,10 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     }));
     return D.vulnIntel;
   }
+  if (path === "/settings/vuln-intel/cache" && m === "DELETE") {
+    D.vulnIntel.cache = { files: 0, bytes: 0, feeds: [], lookup_entries: 0 };
+    return D.vulnIntel;
+  }
   if (path === "/settings/vuln-intel/test") return { ok: true, detail: "mock source answered", elapsed_ms: 420 };
   if (path === "/settings/web-search/test") return { ok: true, count: 5, backend: D.settings.web_search_backend };
   if (path === "/settings/python/detect") return { python_interpreter: "/usr/bin/python3" };

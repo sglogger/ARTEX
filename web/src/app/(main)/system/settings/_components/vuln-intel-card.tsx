@@ -11,11 +11,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/api";
-import type { VulnIntelSource } from "@/lib/types";
+import type { VulnIntelCache, VulnIntelSource } from "@/lib/types";
+
+function humanSize(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
 
 /** Per-source switches and API keys for vuln_lookup / cve_lookup / kev_search. */
 export function VulnIntelCard() {
   const [sources, setSources] = React.useState<VulnIntelSource[]>([]);
+  const [cache, setCache] = React.useState<VulnIntelCache | undefined>();
   const [loaded, setLoaded] = React.useState(false);
   const [keyInput, setKeyInput] = React.useState<Record<string, string>>({});
   const [busy, setBusy] = React.useState<string | null>(null);
@@ -23,7 +30,10 @@ export function VulnIntelCard() {
   React.useEffect(() => {
     api
       .vulnIntel()
-      .then((r) => setSources(r.sources ?? []))
+      .then((r) => {
+        setSources(r.sources ?? []);
+        setCache(r.cache);
+      })
       .catch((e) => toast.error("Failed to load vulnerability sources: " + (e as Error).message))
       .finally(() => setLoaded(true));
   }, []);
@@ -50,6 +60,18 @@ export function VulnIntelCard() {
       .finally(() => setBusy(null));
   };
 
+  const clearCache = () => {
+    setBusy("__cache__");
+    api
+      .clearVulnIntelCache()
+      .then((r) => {
+        setCache(r.cache);
+        toast.success("Cache cleared; the next lookups query the sources again");
+      })
+      .catch((e) => toast.error("Clearing the cache failed: " + (e as Error).message))
+      .finally(() => setBusy(null));
+  };
+
   const test = (src: VulnIntelSource) => {
     setBusy(src.id);
     // The Wordfence test downloads the whole feed, which can take a while on a slow line.
@@ -73,7 +95,8 @@ export function VulnIntelCard() {
         </CardTitle>
         <CardDescription>
           Sources behind the <b>vuln_lookup</b>, <b>cve_lookup</b> and <b>kev_search</b> tools. Each source can be switched off on its own;
-          sources that need a key are skipped until one is saved. Requests use the web search egress proxy, never the recording proxy.
+          sources that need a key are skipped until one is saved. Requests use the web search egress proxy, never the recording proxy. Answers are
+          cached on disk for 24 hours (KEV catalogs 6 hours) and serve as a fallback, marked stale, when a source is unreachable.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col divide-y">
@@ -154,6 +177,24 @@ export function VulnIntelCard() {
             </div>
           );
         })}
+        {cache && (
+          <div className="flex items-center justify-between gap-4 pt-3">
+            <p className="text-muted-foreground text-xs">
+              Local cache: {cache.lookup_entries} lookup answers
+              {cache.feeds.length > 0 && <> and {cache.feeds.length} feeds ({cache.feeds.join(", ")})</>}, {humanSize(cache.bytes)}
+              {cache.newest && <>, last update {new Date(cache.newest).toLocaleString()}</>}.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0"
+              onClick={clearCache}
+              disabled={busy !== null || cache.files === 0}
+            >
+              {busy === "__cache__" ? "Clearing…" : "Clear cache"}
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

@@ -76,7 +76,7 @@ func (s *Service) loadWordfence(ctx context.Context, cfg Settings) (*wordfenceIn
 	s.mu.Lock()
 	idx, loadedAt := s.wordfence, s.wfLoaded
 	s.mu.Unlock()
-	if idx != nil && time.Since(loadedAt) < wordfenceTTL {
+	if idx != nil && time.Since(loadedAt) < wordfenceTTL && !isLive(ctx) {
 		return idx, nil
 	}
 	dir := s.cacheDir
@@ -84,14 +84,15 @@ func (s *Service) loadWordfence(ctx context.Context, cfg Settings) (*wordfenceIn
 		dir = os.TempDir()
 	}
 	path := filepath.Join(dir, "wordfence.json")
+	live := isLive(ctx)
 	fresh := false
-	if st, err := os.Stat(path); err == nil && time.Since(st.ModTime()) < wordfenceTTL {
+	if st, err := os.Stat(path); err == nil && time.Since(st.ModTime()) < wordfenceTTL && !live {
 		fresh = true
 	}
 	stale := false
 	if !fresh {
 		if err := s.downloadTo(ctx, cfg, s.base(SourceWordfence, wordfenceURL), map[string]string{"Authorization": "Bearer " + cfg.key(SourceWordfence)}, path); err != nil {
-			if _, statErr := os.Stat(path); statErr != nil {
+			if _, statErr := os.Stat(path); statErr != nil || live {
 				return nil, err
 			}
 			stale = true // keep using the previous download
@@ -253,12 +254,12 @@ func (w wpsWireVuln) vuln() Vuln {
 
 // wpscanLookup queries one WordPress core version, plugin or theme. Results are
 // cached for a day because the free plan allows only 25 requests per day.
-func (s *Service) wpscanLookup(ctx context.Context, cfg Settings, kind, slug, version string) ([]Vuln, error) {
+func (s *Service) wpscanLookup(ctx context.Context, cfg Settings, kind, slug, version string) ([]Vuln, bool, error) {
 	var path string
 	switch kind {
 	case "wordpress_core":
 		if version == "" {
-			return nil, fmt.Errorf("WPScan needs the WordPress version")
+			return nil, false, fmt.Errorf("WPScan needs the WordPress version")
 		}
 		path = "/wordpresses/" + strings.ReplaceAll(version, ".", "")
 	case "wordpress_theme":
@@ -266,13 +267,7 @@ func (s *Service) wpscanLookup(ctx context.Context, cfg Settings, kind, slug, ve
 	default:
 		path = "/plugins/" + url.PathEscape(strings.ToLower(slug))
 	}
-	s.mu.Lock()
-	ce, ok := s.wpsCache[path]
-	s.mu.Unlock()
-	var all []Vuln
-	if ok && ce.fresh(lookupTTL) {
-		all = ce.val
-	} else {
+	all, stale, err := cached(ctx, s, "wpscan", path, answerTTL, func() ([]Vuln, error) {
 		var resp map[string]struct {
 			Vulnerabilities []wpsWireVuln `json:"vulnerabilities"`
 		}
@@ -281,18 +276,19 @@ func (s *Service) wpscanLookup(ctx context.Context, cfg Settings, kind, slug, ve
 		if err != nil && !isNotFound(err) {
 			return nil, err
 		}
+		all := []Vuln{}
 		for _, entry := range resp {
 			for _, w := range entry.Vulnerabilities {
-				v := w.vuln()
-				all = append(all, v)
+				all = append(all, w.vuln())
 			}
 		}
-		s.mu.Lock()
-		s.wpsCache[path] = cacheEntry[[]Vuln]{all, time.Now()}
-		s.mu.Unlock()
+		return all, nil
+	})
+	if err != nil {
+		return nil, false, err
 	}
 	if kind == "wordpress_core" || version == "" {
-		return all, nil // the core endpoint is already version specific
+		return all, stale, nil // the core endpoint is already version specific
 	}
 	var out []Vuln
 	for _, v := range all {
@@ -304,5 +300,5 @@ func (s *Service) wpscanLookup(ctx context.Context, cfg Settings, kind, slug, ve
 			out = append(out, v)
 		}
 	}
-	return out, nil
+	return out, stale, nil
 }

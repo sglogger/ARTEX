@@ -450,6 +450,8 @@ export interface TaskNode {
   source_task_id?: string;
   inherited?: boolean;
   delete_reason?: string; // delete reason when the intent was soft-deleted (state='deleted')
+  /** Why an exhausted intent ended: no_checkpoint (no check result saved), partial (partial/blocked result) or budget. */
+  exit_reason?: "no_checkpoint" | "partial" | "budget";
 }
 
 // One feed board page: nodes paginated in creation order + the edges on this page + the nodes at the other end (refs, indexed by id),
@@ -962,8 +964,19 @@ export interface VulnIntelSource {
   key_set: boolean;
 }
 
+/** On-disk cache of lookup answers and downloaded feeds (KEV catalogs, Wordfence). */
+export interface VulnIntelCache {
+  files: number;
+  bytes: number;
+  oldest?: string;
+  newest?: string;
+  feeds: string[];
+  lookup_entries: number;
+}
+
 export interface VulnIntelSettings {
   sources: VulnIntelSource[];
+  cache?: VulnIntelCache;
 }
 
 export interface Settings {
