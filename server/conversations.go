@@ -493,7 +493,9 @@ func (s *Server) conversationRunContext(id int64, busyKey string) (context.Conte
 	return ctx, cancel
 }
 
-func (s *Server) runConversationTurn(ctx context.Context, cancel context.CancelCauseFunc, c *db.Conversation, msg, busyKey string) {
+// runConversationTurn returns the agent's final text (empty when the run failed or
+// was stopped) so synchronous callers such as ask_researcher can relay it.
+func (s *Server) runConversationTurn(ctx context.Context, cancel context.CancelCauseFunc, c *db.Conversation, msg, busyKey string) (answer string) {
 	defer func() {
 		cancel(agent.AbortChatTurnFinished)
 		s.chatMu.Lock()
@@ -579,7 +581,8 @@ func (s *Server) runConversationTurn(ctx context.Context, cancel context.CancelC
 	}
 	// On a manual stop ctx is cancelled; Chat already emits a clean "stopped manually"
 	// step, so skip the raw-error entry — only surface genuine failures.
-	if _, err := ca.Chat(ctx, c.AgentKey, sessionID, msg, maxTurns, maxDuration, webSearch, emit); err != nil {
+	text, err := ca.Chat(ctx, c.AgentKey, sessionID, msg, maxTurns, maxDuration, webSearch, emit)
+	if err != nil {
 		finishReason = err.Error()
 		if ctx.Err() == nil {
 			_, _ = pg.AppendConvActivity(c.ID, db.Activity{Worker: c.AgentKey, Kind: "text", IsError: true,
@@ -587,8 +590,10 @@ func (s *Server) runConversationTurn(ctx context.Context, cancel context.CancelC
 		}
 	} else {
 		finishStatus, finishReason = "completed", ""
+		answer = text
 	}
 	_ = pg.TouchConversation(c.ID)
+	return answer
 }
 
 // triggerBehavior is an agent's cached P3 trigger post-processing policy (see the

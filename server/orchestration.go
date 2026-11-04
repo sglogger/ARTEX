@@ -41,7 +41,8 @@ func jsonResult(v any) (actool.Result, error) {
 func (s *Server) hostTools() ([]actool.CoreTool, map[string][]string) {
 	tools := append(s.m.HostTools(), s.orchestrationTools()...)
 	tools = append(tools, s.findingRetestTools()...)
-	tools = append(tools, s.platformTools()...) // platform tools (create/edit skills/tools/MCP, used by Auto)
+	tools = append(tools, s.platformTools()...)  // platform tools (create/edit skills/tools/MCP, used by Auto)
+	tools = append(tools, s.vulnIntelTools()...) // vulnerability intelligence + ask_researcher
 	custom, err := s.customTools()
 	if err != nil {
 		log.Printf("[custom-tool] load failed: %v", err)
@@ -525,6 +526,8 @@ func (s *Server) seedOrchestrationTools() {
 	s.seedFindingCaseTools()
 	s.seedEvidenceHandoffBindings()
 	s.seedCompletionTools()
+	s.seedResearcherAgent() // preset research agent with web search (one-off)
+	s.seedVulnIntelTools()  // vuln_lookup / cve_lookup / kev_search / ask_researcher + default bindings
 	// Note: pentest default tool bindings need no migration: BuiltinToolSeeds seeds
 	// list_assets/insert_assets/report_finding/list_findings/list_companies together with
 	// pentest on a fresh init (the project has no old databases yet, so no migration).

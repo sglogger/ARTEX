@@ -4,6 +4,12 @@ Notable changes to this project are recorded in this file. The format follows [K
 
 ## [Unreleased]
 
+### Added
+
+- Vulnerability intelligence tools for the agents: `vuln_lookup` checks a fingerprinted component version (WordPress core/plugin/theme, product or package) against NVD, OSV, Wordfence and WPScan, `cve_lookup` returns details for CVE/GHSA ids, and `kev_search` searches the known-exploited catalogs. Results carry CISA KEV, ENISA EU KEV and VulnCheck KEV listings and EPSS scores, are sorted with known-exploited issues first, and state per source whether it answered, so an empty list is no longer mistaken for "not affected". Previously a follow-up question about the CVEs of a detected WordPress version was answered from model memory with "no CVEs found"; the lookup now returns the affected and known-exploited core CVEs.
+- Each source can be switched on and off and tested under System settings → Vulnerability intelligence sources, where the keys for NVD (optional), VulnCheck, Wordfence and WPScan are saved. API: `GET`/`PUT /api/settings/vuln-intel`, `POST /api/settings/vuln-intel/test`.
+- Researcher agent with web search, created once at startup. Main agent and planner delegate research questions to it with `ask_researcher` and get an answer with cited sources; each run is kept as a conversation of the Researcher.
+
 ## [0.5.1] - 2026-11-04
 
 No upgrade steps beyond those of 0.5.0.

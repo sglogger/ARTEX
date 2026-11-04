@@ -45,6 +45,7 @@ import type {
   TrafficDetail,
   TrafficHost,
   TrafficResp,
+  VulnIntelSettings,
 } from "@/lib/types";
 
 const T = (iso: string) => iso; // readability helper for timestamps
@@ -3424,6 +3425,19 @@ export const tools: Tool[] = [
 ];
 
 // ── Settings ─────────────────────────────────────────────────────────────────
+export const vulnIntel: VulnIntelSettings = {
+  sources: [
+    { id: "nvd", name: "NVD (NIST)", description: "CVE database with CPE version ranges, CVSS and references.", url: "https://nvd.nist.gov/developers/request-an-api-key", key: "optional", enabled: true, key_set: false },
+    { id: "osv", name: "OSV.dev", description: "Open source package vulnerabilities, including GitHub advisories.", url: "https://osv.dev", key: "none", enabled: true, key_set: false },
+    { id: "cisa_kev", name: "CISA KEV", description: "Known Exploited Vulnerabilities catalog of the US CISA.", url: "https://www.cisa.gov/known-exploited-vulnerabilities-catalog", key: "none", enabled: true, key_set: false },
+    { id: "eu_kev", name: "ENISA EU KEV", description: "Exploited vulnerabilities reported by EU CSIRTs (ENISA CNW).", url: "https://github.com/enisaeu/CNW", key: "none", enabled: true, key_set: false },
+    { id: "vulncheck_kev", name: "VulnCheck KEV", description: "Extended KEV catalog with exploitation evidence and public exploit links.", url: "https://vulncheck.com", key: "required", enabled: true, key_set: false },
+    { id: "epss", name: "FIRST EPSS", description: "Probability that a CVE is exploited in the next 30 days.", url: "https://www.first.org/epss", key: "none", enabled: true, key_set: false },
+    { id: "wordfence", name: "Wordfence Intelligence", description: "WordPress core, plugin and theme vulnerabilities (feed v3, free API key).", url: "https://www.wordfence.com/threat-intel/", key: "required", enabled: true, key_set: true },
+    { id: "wpscan", name: "WPScan", description: "WordPress core, plugin and theme vulnerabilities (free plan: 25 requests/day).", url: "https://wpscan.com/api", key: "required", enabled: false, key_set: false },
+  ],
+};
+
 export const settings: Settings = {
   traffic_capture: true,
   agent_traffic_binding: false,

@@ -950,6 +950,22 @@ export interface TrafficHost {
 }
 
 // ---- App settings (runtime toggles) ----
+/** One vulnerability intelligence source as returned by GET /api/settings/vuln-intel. Keys are never returned, only key_set. */
+export interface VulnIntelSource {
+  id: string;
+  name: string;
+  description: string;
+  url: string;
+  /** Whether the source needs an API key: none | optional | required. */
+  key: "none" | "optional" | "required";
+  enabled: boolean;
+  key_set: boolean;
+}
+
+export interface VulnIntelSettings {
+  sources: VulnIntelSource[];
+}
+
 export interface Settings {
   completion_review_seconds?: number;
   completion_review_turns?: number;

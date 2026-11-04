@@ -86,6 +86,33 @@ Asset data can be synced directly from [ScopeSentry](https://github.com/Autumn-2
 - Jobs keep running in the background; after leaving or refreshing the page you can check per-type progress, failure reasons, and source records in the history. Interrupted jobs can be resumed, and failed records can be retried on their own.
 - Fetched record counts and distinct asset changes are counted separately, and the raw JSON can be downloaded for each item, so partial success is not mistaken for full completion.
 
+## Vulnerability intelligence and research agent
+
+Agents can check fingerprinted software against public vulnerability databases instead of answering from model memory:
+
+| Tool | Answers | Default agents |
+| --- | --- | --- |
+| `vuln_lookup` | Known vulnerabilities for a component version: `wordpress_core`, `wordpress_plugin`, `wordpress_theme`, `product` (matched through NVD CPE ranges) or `package` (matched through OSV, needs an ecosystem such as npm, PyPI or Packagist). | Main, Planner, Worker, Pentest, Auto, Researcher |
+| `cve_lookup` | Details for CVE/GHSA ids: description, CVSS, CWE, affected ranges, exploit and advisory references. | same |
+| `kev_search` | Known-exploited catalog entries by keyword, vendor, product, date added or ransomware use. | same |
+| `ask_researcher` | Hands a question to the **Researcher** agent, which searches the web, reads the sources and queries the databases, then answers with cited sources. The run stays visible as a conversation of that agent. | Main, Planner |
+
+Every vulnerability is enriched with its CISA KEV, ENISA EU KEV and VulnCheck KEV listings and its EPSS score, and results are sorted with known-exploited and highest-CVSS issues first. Each result reports per-source status (`ok`, `stale`, `skipped`, `error`, `not_applicable`) and `complete`: an empty list only means "no known vulnerability" when every applicable source answered.
+
+Sources are switched on and off one by one under **System settings → Vulnerability intelligence sources**, where keys are saved and each source can be tested:
+
+| Source | Key | Covers |
+| --- | --- | --- |
+| NVD | optional (raises the rate limit from 5 to 50 requests per 30 s) | CVEs with CPE version ranges |
+| OSV.dev | none | Open source packages, including GitHub advisories |
+| CISA KEV, ENISA EU KEV | none | Exploited-in-the-wild catalogs, cached for 6 h under `data/vulnintel/` |
+| VulnCheck KEV | required | Extended KEV with exploit links |
+| FIRST EPSS | none | Exploit probability |
+| Wordfence Intelligence | required (free) | WordPress core, plugins and themes; feed v3, cached for 24 h |
+| WPScan | required (free plan: 25 requests/day) | WordPress core, plugins and themes; answers cached for 24 h |
+
+Lookups go through the web search egress proxy when one is set, never through the traffic recording proxy. The Researcher agent is created once on startup with web search enabled; its prompt, tools and run budget can be changed under **System → Agents**.
+
 ---
 
 ## Installation

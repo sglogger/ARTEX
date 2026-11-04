@@ -77,6 +77,7 @@ import type {
   PromptVersion,
   SessionTokenUsage,
   Settings,
+  VulnIntelSettings,
   Severity,
   SkillCall,
   SkillItem,
@@ -915,6 +916,14 @@ export const api = {
     brave_search_api_key?: string;
     tavily_search_api_key?: string;
   }) => post<{ ok: boolean; error?: string; count?: number; backend?: string }>(`/settings/web-search/test`, patch),
+
+  // ---- vulnerability intelligence sources (vuln_lookup / cve_lookup / kev_search) ----
+  // keys: null leaves a stored key untouched, "" clears it.
+  vulnIntel: () => get<VulnIntelSettings>(`/settings/vuln-intel`),
+  setVulnIntel: (patch: { enabled?: Record<string, boolean>; keys?: Record<string, string | null> }) =>
+    put<VulnIntelSettings>(`/settings/vuln-intel`, patch),
+  testVulnIntel: (source: string, key?: string) =>
+    post<{ ok: boolean; detail?: string; error?: string; elapsed_ms?: number }>(`/settings/vuln-intel/test`, { source, key }),
 
   // ---- Finding IM notifications ----
   // Channels are multi-instance resources (one type can have several bots, each with its own filters), so they are a separate group

@@ -2254,6 +2254,17 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (path === "/traffic/exchange") return D.trafficDetail;
   if (path === "/settings" && m === "GET") return D.settings;
   if (path === "/settings" && m === "PUT") return { ...D.settings, ...b };
+  if (path === "/settings/vuln-intel" && m === "GET") return D.vulnIntel;
+  if (path === "/settings/vuln-intel" && m === "PUT") {
+    const patch = b as { enabled?: Record<string, boolean>; keys?: Record<string, string | null> };
+    D.vulnIntel.sources = D.vulnIntel.sources.map((src) => ({
+      ...src,
+      enabled: patch.enabled?.[src.id] ?? src.enabled,
+      key_set: patch.keys && src.id in patch.keys && patch.keys[src.id] !== null ? patch.keys[src.id] !== "" : src.key_set,
+    }));
+    return D.vulnIntel;
+  }
+  if (path === "/settings/vuln-intel/test") return { ok: true, detail: "mock source answered", elapsed_ms: 420 };
   if (path === "/settings/web-search/test") return { ok: true, count: 5, backend: D.settings.web_search_backend };
   if (path === "/settings/python/detect") return { python_interpreter: "/usr/bin/python3" };
   if (path === "/chat")
