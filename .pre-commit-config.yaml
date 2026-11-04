@@ -1,0 +1,21 @@
+# pre-commit configuration (https://pre-commit.com)
+#
+# Runs the detection merge gate locally before a commit, so a broken change is caught before it
+# is pushed. The hook fires only on commits that touch the detection rules (detections/, including
+# the defense guide detections/DEFENSE.md) or the upstream source those rules pin, and runs
+# detections/tests/run-all.sh: the eight detection suites plus the three gates, with the same
+# rule/source scope as CI (.github/workflows/detections.yml). It needs Docker (every suite runs in
+# a container; nothing is installed on the host). A failing assertion exits non-zero and stops the
+# commit.
+#
+# Install:     pip install pre-commit && pre-commit install
+# Run by hand: pre-commit run detections --all-files
+repos:
+  - repo: local
+    hooks:
+      - id: detections
+        name: Detection rule tests (Sigma, Suricata, ATT&CK, indicators, MISP)
+        entry: detections/tests/run-all.sh
+        language: script
+        pass_filenames: false
+        files: '^(detections/|enrich/enrich\.go|selfupdate/(github|stage)\.go|guard/guard\.go|db/db\.go|db/schema\.sql|cmd/artex/main\.go|traffic/traffic\.go)'

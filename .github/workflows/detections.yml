@@ -1,0 +1,84 @@
+name: detections
+
+# On every push/PR that touches the detection rules (Sigma, Suricata, ATT&CK layer), reproduce
+# that the rules actually fire, convert to several SIEM backends, match the coverage layer, still
+# agree with the upstream source they pin, and pass the full SigmaHQ convention set. A rule change
+# without matching test/layer updates turns red here. Go build/vet/test is covered by tests.yml.
+# Besides the eight detection suites, three gates that are not rules run here as well (and in
+# run-all.sh): the harness registry sync check, the self-test of the host triage tool
+# (detections/triage/artex_host_triage.py), and the consistency check of the inline Sigma
+# correlation template in the defense guide (detections/DEFENSE.md), which re-proves the facts the
+# guide states about it (`sigma check` passes, converts on splunk/eql/loki, lucene/kusto reject the
+# correlation) so an upstream sigma-cli/backend change cannot make the prose silently stale.
+#
+# Everything runs in Docker (ubuntu-latest ships it): the suites pull sigma-cli, scapy, suricata
+# and python images and run isolated, mount only the rule tree and the pinned source files
+# read-only, and write nothing to the repository. Besides detections/, the workflow also triggers
+# on the source files the indicator test pins: the User-Agents, guard marker and destructive-command
+# tokens in enrich/selfupdate/guard/db, the default listen/proxy ports in cmd/artex/main.go, the
+# MITM CA file name in traffic/traffic.go and the exploration-graph schema in db/schema.sql, so a
+# source change that alters an indicator cannot leave the rules stale. Public images are pulled
+# unauthenticated, so a rare Docker Hub rate limit can fail a run; re-running resolves it.
+
+on:
+  push:
+    paths:
+      - "detections/**"
+      - "enrich/enrich.go"
+      - "selfupdate/github.go"
+      - "selfupdate/stage.go"
+      - "guard/guard.go"
+      - "db/db.go"
+      - "db/schema.sql"
+      - "cmd/artex/main.go"
+      - "traffic/traffic.go"
+      - ".github/workflows/detections.yml"
+  pull_request:
+    paths:
+      - "detections/**"
+      - "enrich/enrich.go"
+      - "selfupdate/github.go"
+      - "selfupdate/stage.go"
+      - "guard/guard.go"
+      - "db/db.go"
+      - "db/schema.sql"
+      - "cmd/artex/main.go"
+      - "traffic/traffic.go"
+      - ".github/workflows/detections.yml"
+
+permissions:
+  contents: read
+
+# A new push to the same branch cancels the previous run, so frequent pushes do not pile up runs.
+concurrency:
+  group: detections-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detections:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test harness registry sync (run-all.sh, CI and directories agree)
+        run: detections/tests/check-harness-sync.sh
+      - name: Host triage tool self-test (artex_host_triage.py --self-test, gate not rule)
+        run: detections/tests/triage-selftest.sh
+      - name: Defense guide inline Sigma template consistency (sigma check, conversion matrix; gate not rule)
+        run: detections/tests/check-defense-template.sh
+      - name: Sigma rule reproduction (sigma check, backend conversion, indicators preserved)
+        run: detections/tests/sigma/run.sh
+      - name: Sigma event matching (atomic and correlation rules fire on samples, stay quiet on benign)
+        run: detections/tests/sigma_match/run.sh
+      - name: Sigma SigmaHQ convention lint (full validator set and documented baseline)
+        run: detections/tests/sigma_lint/run.sh
+      - name: Sigma backend portability (correlation rules convert on several backends)
+        run: detections/tests/sigma_backends/run.sh
+      - name: Suricata rule reproduction (synthesize pcap, suricata -r, assert alert counts)
+        run: detections/tests/suricata/run.sh
+      - name: ATT&CK layer and rule consistency
+        run: detections/tests/attack/run.sh
+      - name: Indicators match upstream source (re-sync drift guard)
+        run: detections/tests/indicators/run.sh
+      - name: Indicator MISP export and CSV in sync (pymisp validates the MISP format)
+        run: detections/tests/misp/run.sh

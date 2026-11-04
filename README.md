@@ -344,7 +344,7 @@ In this version, retest history is viewed through finding details and conversati
 ### Local run and tests
 
 ```bash
-./dev.sh    # backend (:8787) + traffic proxy (:8788) + frontend next dev (:5173) → http://localhost:5173
+./dev.sh    # backend (127.0.0.1:8787) + traffic proxy (:8788) + frontend next dev (:5173) → http://localhost:5173
 ```
 
 - Backend: `go run ./cmd/artex` (without `-tags embedui` the frontend is not embedded)
@@ -355,6 +355,17 @@ In this version, retest history is viewed through finding details and conversati
 - Release script tests: `python tests/build_test.py` (needs Bash; simulates the Go build and actually verifies zip contents and SHA256)
 - See [`tests/README.md`](tests/README.md) for test directory and entry point details. Go test files live in each package's `tests` subdirectory and must go through the overlay entry point; a plain `go test ./...` does not load them.
 - Mock preview (no backend): `cd web && NEXT_PUBLIC_MOCK=1 npm run dev`
+- Detection rule tests: `detections/tests/run-all.sh` (Docker only; the same eight suites and three gates as the `detections` CI workflow). Optional pre-commit hook: `pip install pre-commit && pre-commit install`.
+
+---
+
+## Defense and detection
+
+[`detections/`](detections/) contains material for **defenders** of systems that may be targeted by autonomous AI attack tools like ARTEX, or hosts where ARTEX may have run without authorization:
+
+- [Defense guide](detections/DEFENSE.md): how an autonomous agent attack differs from a scanner, observable fingerprints, hardening, detection patterns and an incident response summary.
+- Deployable [Sigma](detections/sigma/) and [Suricata](detections/suricata/) rules, a [MITRE ATT&CK layer](detections/attack/), an [indicator list](detections/indicators/) (CSV and MISP) and a read-only [host triage script](detections/triage/).
+- Reproducible [tests](detections/tests/) that prove the rules fire and that every indicator still matches this repository's source. See [`detections/CONTRIBUTING.md`](detections/CONTRIBUTING.md) when changing a fingerprint (User-Agent, guard marker, ports, CA file name, schema).
 
 ---
 

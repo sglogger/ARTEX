@@ -4,6 +4,10 @@ Notable changes to this project are recorded in this file. The format follows [K
 
 ## [Unreleased]
 
+### Added
+
+- Defense and detection pack under `detections/`, adopted from [artex-global](https://github.com/jiwoochris/artex-global) and adapted to this build: a defense guide (`detections/DEFENSE.md`), Sigma atomic and correlation rules, Suricata rules, a MITRE ATT&CK Navigator layer, an indicator list as CSV and MISP event, a read-only host triage script, and eight Docker-based test suites plus three gates (`detections/tests/run-all.sh`, CI workflow `detections`, optional pre-commit hook). The guard audit marker is matched in its English form written by this build and in the Chinese upstream form; the indicator tests verify every fingerprint against this repository's source.
+
 ### Security
 
 - Blocked a remote takeover of the admin account on first run. While no password is set, `POST /api/auth/init` used to accept anyone who reached the port first. It now requires a random setup token that is printed only to the server console (`[auth] ... Setup token: ...`) and is compared in constant time; `/setup` has a field for it. `ARTEX_SETUP_TOKEN` pins the token (never logged), `ARTEX_ADMIN_PASSWORD` initialises the password at startup without `/setup`.
