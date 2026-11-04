@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Autumn-27/norma/hook"
 	"github.com/Autumn-27/norma/llm"
 	"github.com/Autumn-27/norma/permission"
 	"github.com/Autumn-27/norma/tool"
@@ -224,5 +225,43 @@ func TestCompactionWorkingSetIsPersisted(t *testing.T) {
 	// [summary, tail] (the assistant's reply, recorded after, trails it).
 	if api := llm.MessagesForAPI(post); len(api) < 2 || !strings.Contains(api[0].Text(), "DIGEST") || api[1].Text() != "TAILMSG" {
 		t.Fatalf("MessagesForAPI(persisted working set) = %+v, want to open with [summary, TAILMSG]", api)
+	}
+}
+
+// A model that calls a CamelCase tool by a drifted name (bash) must reach the
+// tool, and hooks must see the canonical name, so name-matched policy (intercept
+// rules, audit, wrap-up denials) applies exactly as for a correct call.
+func TestDriftedToolNameRunsUnderCanonicalName(t *testing.T) {
+	m := &scriptedModel{turns: [][]llm.StreamEvent{
+		toolTurn("c1", "bash", `{"command":"echo hi"}`),
+		toolTurn("c2", "BASH", `{"command":"echo blocked"}`),
+		textTurn("done"),
+	}}
+	var seen []string
+	hooks := hook.NewRegistry().On(hook.PreToolUse, func(_ context.Context, ev hook.Event) hook.Result {
+		seen = append(seen, ev.ToolName)
+		if strings.Contains(string(ev.Input), "blocked") {
+			return hook.Result{Decision: "block", Message: "policy"}
+		}
+		return hook.Result{}
+	})
+	in := QueryInput{
+		Messages:       []llm.Message{llm.UserText("go")},
+		Tools:          tool.NewRegistry(tool.NewBash()),
+		PermissionMode: permission.ModeBypass,
+		WorkingDir:     t.TempDir(),
+		Hooks:          hooks,
+	}
+	term := drain(t, in, QueryDeps{CallModel: m.call})
+	if len(seen) != 2 || seen[0] != "Bash" || seen[1] != "Bash" {
+		t.Fatalf("hooks saw %v, want canonical Bash twice", seen)
+	}
+	ran := term.Messages[2].Content[0]
+	if ran.IsError || !strings.Contains(ran.Content[0].Text, "hi") {
+		t.Fatalf("drifted call did not run: %+v", ran)
+	}
+	blocked := term.Messages[4].Content[0]
+	if !blocked.IsError || !strings.Contains(blocked.Content[0].Text, "Blocked by hook") {
+		t.Fatalf("hook block bypassed by drifted name: %+v", blocked)
 	}
 }

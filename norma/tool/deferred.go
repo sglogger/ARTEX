@@ -251,10 +251,11 @@ func NewExecuteExtraTool(reg *Registry, unlock *UnlockSet) CoreTool {
 			if args.ToolName == "" {
 				return Errorf("Error: tool_name is required"), nil
 			}
-			t, ok := reg.Get(args.ToolName)
+			t, name, ok := reg.Resolve(args.ToolName)
 			if !ok {
 				return Errorf("Error: unknown tool " + args.ToolName), nil
 			}
+			args.ToolName = name // canonical, so the unlock gate matches the official name
 			if unlock != nil && !unlock.Has(args.ToolName) {
 				return Errorf("Error: tool " + args.ToolName +
 					" is not unlocked in this session — load the skill that provides it first."), nil

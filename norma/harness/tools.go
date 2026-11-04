@@ -35,10 +35,16 @@ func (l *loop) execOne(use llm.ContentBlock, emitProgress func(tool.ProgressInfo
 }
 
 func (l *loop) execOneContext(ctx context.Context, use llm.ContentBlock, emitProgress func(tool.ProgressInfo)) (llm.ContentBlock, []llm.Message) {
+	// Resolve first and continue under the canonical name, so a drifted spelling
+	// (bash for Bash) still reaches the tool while execution guards, permission
+	// rules and hooks see the official name and apply exactly as for a correct call.
+	t, name, ok := l.in.Tools.Resolve(use.Name)
+	if ok {
+		use.Name = name
+	}
 	if err := tool.CheckExecution(ctx, use.Name); err != nil {
 		return llm.ToolResultText(use.ID, err.Error(), true), nil
 	}
-	t, ok := l.in.Tools.Get(use.Name)
 	if !ok {
 		return llm.ToolResultText(use.ID, fmt.Sprintf("Error: unknown tool %q", use.Name), true), nil
 	}

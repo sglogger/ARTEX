@@ -56,7 +56,7 @@ func (e *streamExec) ping() {
 func (e *streamExec) add(block llm.ContentBlock) {
 	e.mu.Lock()
 	safe := false
-	if t, ok := e.l.in.Tools.Get(block.Name); ok {
+	if t, _, ok := e.l.in.Tools.Resolve(block.Name); ok {
 		safe = t.IsConcurrencySafe(block.Input)
 	}
 	e.tools = append(e.tools, &tracked{block: block, safe: safe})
