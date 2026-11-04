@@ -249,7 +249,7 @@ ARTEX_TARGETS=linux/amd64,windows/amd64 ./build.sh --release
 
 ## Upgrading
 
-The running version is shown as a pill in the top bar; click it to read the changelog of exactly that build (embedded from [`CHANGELOG.md`](CHANGELOG.md)). Local builds show the release they are based on, e.g. `v0.6.3 · local`.
+The running version is shown as a pill in the top bar; click it to read the changelog of exactly that build (embedded from [`CHANGELOG.md`](CHANGELOG.md)). Local builds show the release they are based on, e.g. `v0.6.4 · local`.
 
 > **Upgrading from 0.4.x to 0.5.x:** the port now binds to `127.0.0.1` by default. Set `ARTEX_BIND=0.0.0.0` in `.env` (Docker) or pass `-addr :8787` if ARTEX must stay reachable from other machines. Everyone has to log in once more after the upgrade. See the upgrade notes in the [CHANGELOG](CHANGELOG.md).
 

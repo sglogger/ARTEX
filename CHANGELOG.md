@@ -4,6 +4,10 @@ Notable changes to this project are recorded in this file. The format follows [K
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-11-04
+
+No upgrade steps. The `notes` and `report_edited_at` columns are added to `findings` on first start.
+
 ### Added
 
 - Findings can be edited by hand on the finding detail page, with a Markdown editor and preview:
