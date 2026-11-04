@@ -18,6 +18,7 @@ Notable changes to this project are recorded in this file. The format follows [K
 
 ### Changed
 
+- One-click update and the update hint check releases of `sglogger/ARTEX` instead of the upstream `Autumn-27/artex` (which has no releases). The source stays hard-coded on purpose, so a config change cannot point the updater at another binary. README clone and release links point to this repository as well.
 - The backend listens on `127.0.0.1:8787` by default (`-addr`), and `docker-compose.yml` publishes the UI/API port on `${ARTEX_BIND:-127.0.0.1}`. **To reach ARTEX from other machines, set `ARTEX_BIND=0.0.0.0` in `.env` (Docker) or pass `-addr :8787`.** Starting on a non-loopback address without a password logs a warning. The Docker image still binds `:8787` inside the container.
 
 ### Fixed

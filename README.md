@@ -111,7 +111,7 @@ Before releasing, maintainers must set the GitHub repository secrets `DOCKERHUB_
 ### Option 1: one-click install script (recommended)
 
 ```bash
-git clone https://github.com/Autumn-27/ARTEX.git
+git clone https://github.com/sglogger/ARTEX.git
 cd ARTEX
 ./install.sh
 ```
@@ -126,7 +126,7 @@ Once installed, open **http://localhost:8787**. On first visit, `/setup` asks fo
 ### Option 2: Docker Compose (manual)
 
 ```bash
-git clone https://github.com/Autumn-27/ARTEX.git
+git clone https://github.com/sglogger/ARTEX.git
 cd ARTEX
 cp .env.example .env          # set POSTGRES_PASSWORD, optionally ANTHROPIC_API_KEY
 docker compose up -d          # pulls the dgddw/artex image + postgres
@@ -142,7 +142,7 @@ the `/message?sessionId=...` URL returned by the server; set the URL to `/sse` a
 
 ### Option 3: download prebuilt binaries (Releases)
 
-Download the zip for your platform from [Releases](https://github.com/Autumn-27/ARTEX/releases); it unpacks to `artex` + `start.sh` (`start.bat` on Windows) + `skills/` + `config.example.json`:
+Download the zip for your platform from [Releases](https://github.com/sglogger/ARTEX/releases); it unpacks to `artex` + `start.sh` (`start.bat` on Windows) + `skills/` + `config.example.json`:
 
 ```bash
 cp config.example.json config.json   # fill in the database connection
@@ -226,7 +226,7 @@ docker image prune -f          # remove old images (optional)
 
 ### Option 4: prebuilt binaries (Releases)
 
-Download the new zip from [Releases](https://github.com/Autumn-27/ARTEX/releases), stop the old process, overwrite `artex` and `skills/` (keep your `config.json` and `data/`), and restart:
+Download the new zip from [Releases](https://github.com/sglogger/ARTEX/releases), stop the old process, overwrite `artex` and `skills/` (keep your `config.json` and `data/`), and restart:
 
 ```bash
 cp -r <unpacked-dir>/skills ./ && cp <unpacked-dir>/artex ./

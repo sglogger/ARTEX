@@ -12,7 +12,7 @@ import (
 
 // Repo is the release source. It is hard-coded rather than configurable: a configurable update source would give anyone who can edit the config a
 // remote code execution channel, which a penetration testing platform cannot allow.
-const Repo = "Autumn-27/artex"
+const Repo = "sglogger/ARTEX"
 
 // latestURL is GitHub's "latest release" endpoint. It skips prereleases and drafts automatically.
 const latestURL = "https://api.github.com/repos/" + Repo + "/releases/latest"
