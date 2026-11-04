@@ -4,6 +4,10 @@ Notable changes to this project are recorded in this file. The format follows [K
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-04
+
+No upgrade steps. The PDF is printed by the Chromium already in the Docker image; installations outside Docker need Playwright's Chromium, a system Chrome/Chromium or `ARTEX_CHROME`, otherwise the report is offered as HTML.
+
 ### Added
 
 - Professional report: the findings page and the task Report tab have a button that combines the findings of one or more tasks (plus checked findings) into a client-ready PDF with cover page, management summary, scope per task, methodology, severity definitions, findings overview and detailed findings. Options: minimum severity, statuses to leave out, merging duplicates through finding groups, English or German, and an optional hand-written management summary. The PDF is printed by headless Chromium (shipped in the Docker image; `ARTEX_CHROME` points to another one); without Chromium the HTML version is offered. API: `POST /api/reports/professional`, `GET /api/reports/professional/capabilities`.
