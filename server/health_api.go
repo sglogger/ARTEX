@@ -1,14 +1,38 @@
 package server
 
 import (
+	"io"
 	"net/http"
+	"regexp"
 	"time"
 
+	"github.com/Autumn-27/artex"
 	"github.com/Autumn-27/artex/db"
 )
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{"ok": true, "service": "artex", "version": BuildVersion})
+	writeJSON(w, 200, map[string]any{"ok": true, "service": "artex", "version": BuildVersion, "changelog_version": changelogVersion})
+}
+
+// changelogVersion is the newest released version in the embedded changelog
+// ("## [0.4.3] - ..."). Local builds report version "dev"/"local"; this tells which
+// release they are based on.
+var changelogVersion = latestChangelogVersion(artex.Changelog)
+
+var changelogHeading = regexp.MustCompile(`(?m)^## \[(\d[^\]]*)\]`)
+
+func latestChangelogVersion(text string) string {
+	if m := changelogHeading.FindStringSubmatch(text); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// changelog serves the CHANGELOG.md embedded at build time, so the release notes
+// always match the running binary (also offline and for private repositories).
+func (s *Server) changelog(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	_, _ = io.WriteString(w, artex.Changelog)
 }
 
 func (s *Server) stats(w http.ResponseWriter, r *http.Request) {

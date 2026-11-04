@@ -184,6 +184,8 @@ ARTEX_TARGETS=linux/amd64,windows/amd64 ./build.sh --release
 
 ## Upgrading
 
+The running version is shown as a pill in the top bar; click it to read the changelog of exactly that build (embedded from [`CHANGELOG.md`](CHANGELOG.md)). Local builds show the release they are based on, e.g. `v0.4.3 · local`.
+
 > Upgrades only replace the program, never the data: the Postgres volume `pgdata`, `./data` (jwt.key / SQLite, etc.), and `./skills` are all kept. **Database migrations do not need to be run by hand** — every time `artex` starts it idempotently reruns `schema.sql` (including `ADD COLUMN` / `CREATE INDEX IF NOT EXISTS`), i.e. "restart to migrate". Backing up `./data` and the database before upgrading is still recommended.
 
 ### Option 1: one-click update in the UI (recommended)

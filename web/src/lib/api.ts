@@ -242,7 +242,16 @@ function interceptPageQuery(page: number, size: number, filter: InterceptApprova
 
 export const api = {
   // Backend app version (injected via ldflags at release, defaults to "dev").
-  health: () => get<{ ok: boolean; service: string; version: string }>("/health"),
+  health: () =>
+    get<{ ok: boolean; service: string; version: string; changelog_version?: string }>("/health"),
+  // CHANGELOG.md embedded in the running binary (Markdown).
+  changelog: async () => {
+    if (MOCK) return "# Changelog\n\nThe demo has no release notes.";
+    const token = getToken();
+    const r = await fetch("/api/changelog", { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!r.ok) throw new Error(`changelog: ${r.status}`);
+    return r.text();
+  },
 
   // ---- auth ----
   authStatus: () => get<{ initialized: boolean; setup_token_required?: boolean }>("/auth/status"),

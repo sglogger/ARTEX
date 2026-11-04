@@ -15,6 +15,7 @@ import { LayoutControls } from "./sidebar/layout-controls";
 import { SearchDialog } from "./sidebar/search-dialog";
 import { ThemeSwitcher } from "./sidebar/theme-switcher";
 import { UpdateBadge } from "./update-badge";
+import { VersionPill } from "./version-pill";
 
 // The task detail page is left as is: it has its own header/Tabs and padding, so no global header or padding is added here.
 function isFullBleed(pathname: string) {
@@ -35,11 +36,15 @@ export function MainContent({ children }: { children: ReactNode }) {
   const currentUser = useCurrentUser();
   const pathname = usePathname();
   const [version, setVersion] = useState("");
+  const [releaseVersion, setReleaseVersion] = useState("");
 
   useEffect(() => {
     api
       .health()
-      .then((h) => setVersion((h.version ?? "").replace(/^v(?=\d)/, "")))
+      .then((h) => {
+        setVersion((h.version ?? "").replace(/^v(?=\d)/, ""));
+        setReleaseVersion(h.changelog_version ?? "");
+      })
       .catch(() => setVersion(""));
   }, []);
 
@@ -65,9 +70,7 @@ export function MainContent({ children }: { children: ReactNode }) {
             <SearchDialog />
           </div>
           <div className="flex items-center gap-2">
-            {version && (
-              <span className="font-medium text-muted-foreground text-xs tabular-nums">Version · {version}</span>
-            )}
+            {version && <VersionPill version={version} releaseVersion={releaseVersion} />}
             <UpdateBadge />
             <LayoutControls />
             <ThemeSwitcher />

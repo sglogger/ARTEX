@@ -6,6 +6,7 @@ Notable changes to this project are recorded in this file. The format follows [K
 
 ### Added
 
+- Version pill in the top bar: shows the running version and opens the changelog in a dialog. `CHANGELOG.md` is embedded into the binary at build time and served by `GET /api/changelog`, so the notes always match the running version, also offline. Local builds (version `dev`/`local`) show the newest release in the embedded changelog they are based on, e.g. `v0.4.3 · local` (`changelog_version` in `GET /api/health`).
 - Defense and detection pack under `detections/`, adopted from [artex-global](https://github.com/jiwoochris/artex-global) and adapted to this build: a defense guide (`detections/DEFENSE.md`), Sigma atomic and correlation rules, Suricata rules, a MITRE ATT&CK Navigator layer, an indicator list as CSV and MISP event, a read-only host triage script, and eight Docker-based test suites plus three gates (`detections/tests/run-all.sh`, CI workflow `detections`, optional pre-commit hook). The guard audit marker is matched in its English form written by this build and in the Chinese upstream form; the indicator tests verify every fingerprint against this repository's source.
 
 ### Security
