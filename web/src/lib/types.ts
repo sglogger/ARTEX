@@ -39,6 +39,7 @@ export interface Task {
   pinned_at?: string | null;
   description: string;
   goal: string;
+  project_id?: number;
   status: TaskStatus;
   completion?: TaskCompletion;
   created_at: string;
@@ -781,8 +782,36 @@ export interface FindingRetest {
   finished_at: string | null;
 }
 
+/** A project (engagement) bundling tasks, chats and categories. */
+export interface Project {
+  id: number;
+  name: string;
+  client: string;
+  description: string;
+  status: "active" | "archived";
+  start_date?: string | null;
+  end_date?: string | null;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+  tasks: number;
+  running_tasks: number;
+  conversations: number;
+  findings: { critical: number; high: number; medium: number; low: number; info: number };
+}
+
+export interface ProjectInput {
+  name: string;
+  client?: string;
+  description?: string;
+  /** RFC 3339 timestamps (dates at midnight UTC). */
+  start_date?: string | null;
+  end_date?: string | null;
+}
+
 export interface Conversation {
   id: number;
+  project_id?: number;
   running?: boolean; // live server state, returned with the conversation list
   agent_key: string;
   title: string;

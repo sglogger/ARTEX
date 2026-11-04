@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
+import { getActiveProjectId } from "@/lib/project";
 import type { ProfessionalReportRequest, Task } from "@/lib/types";
 
 /** Statuses that are left out by default: they are not open security issues. */
@@ -100,7 +101,20 @@ export function ProfessionalReportDialog({
     if (!open) return;
     setTaskIds(new Set(initialTaskIds ?? []));
     setUseFindings(findingIds.length > 0);
-    setMeta(loadMeta());
+    const remembered = loadMeta();
+    setMeta(remembered);
+    // Inside a project, its name and client fill the cover when nothing else was entered.
+    const projectId = getActiveProjectId();
+    if (projectId) {
+      api
+        .projects()
+        .then((list) => {
+          const p = list.find((x) => String(x.id) === projectId);
+          if (!p) return;
+          setMeta((m) => ({ ...m, title: m.title || p.name, client: m.client || p.client }));
+        })
+        .catch(() => undefined);
+    }
     api
       .tasks()
       .then((r) => setTasks(r.tasks))

@@ -209,7 +209,11 @@ func (s *Server) askResearcher(ctx context.Context, question, extra string, task
 	if taskID > 0 {
 		title = fmt.Sprintf("Task #%d · %s", taskID, title)
 	}
-	c, err := s.m.pg.CreateConversation(researcherAgentKey, title, nil)
+	projectID := s.callerProject(ctx)
+	if taskID > 0 {
+		projectID = s.m.pg.TaskProjectID(taskID)
+	}
+	c, err := s.m.pg.CreateConversationInProject(projectID, researcherAgentKey, title, nil)
 	if err != nil || c == nil {
 		return "", 0, fmt.Errorf("create research conversation: %v", err)
 	}

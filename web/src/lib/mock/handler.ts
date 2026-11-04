@@ -2255,6 +2255,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (path === "/settings" && m === "GET") return D.settings;
   if (path === "/settings" && m === "PUT") return { ...D.settings, ...b };
   if (path === "/reports/professional/capabilities") return { pdf: true };
+  if (path === "/projects" && m === "GET") return { projects: D.projects };
   if (path === "/settings/vuln-intel" && m === "GET") return D.vulnIntel;
   if (path === "/settings/vuln-intel" && m === "PUT") {
     const patch = b as { enabled?: Record<string, boolean>; keys?: Record<string, string | null> };

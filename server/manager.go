@@ -32,6 +32,7 @@ type Task struct {
 	Name         string `json:"name"` // optional task name; empty = untitled
 	CategoryID   *int64 `json:"category_id,omitempty"`
 	CategoryName string `json:"category_name,omitempty"`
+	ProjectID    int64  `json:"project_id"` // project (engagement); moves update it through updateLifecycle
 	PinnedAt     int64  `json:"pinned_at,omitempty"`
 	Description  string `json:"description"`
 	Goal         string `json:"goal"`
@@ -96,6 +97,7 @@ type taskLifecycleState struct {
 	CompanyIDs      []int64
 	CategoryID      *int64
 	CategoryName    string
+	ProjectID       int64
 }
 
 func (t *Task) lifecycleSnapshot() taskLifecycleState {
@@ -126,6 +128,7 @@ func (t *Task) lifecycleSnapshotLocked() taskLifecycleState {
 		CompanyIDs:      append([]int64(nil), t.CompanyIDs...),
 		CategoryID:      cloneInt64Ptr(t.CategoryID),
 		CategoryName:    t.CategoryName,
+		ProjectID:       t.ProjectID,
 	}
 }
 
@@ -153,6 +156,7 @@ func (t *Task) updateLifecycle(update func(*taskLifecycleState)) {
 	t.CompanyIDs = append(t.CompanyIDs[:0], state.CompanyIDs...)
 	t.CategoryID = cloneInt64Ptr(state.CategoryID)
 	t.CategoryName = state.CategoryName
+	t.ProjectID = state.ProjectID
 	t.lifecycleMu.Unlock()
 }
 
@@ -851,7 +855,7 @@ func taskFromPG(pt *pgdb.Task, store *pgdb.ExplorationStore, ic *intercept.Inter
 	return &Task{
 		ID: strconv.FormatInt(pt.ID, 10), ExpID: pt.ExplorationID,
 		Name:       pt.Name,
-		CategoryID: cloneInt64Ptr(pt.CategoryID), CategoryName: pt.CategoryName,
+		CategoryID: cloneInt64Ptr(pt.CategoryID), CategoryName: pt.CategoryName, ProjectID: pt.ProjectID,
 		PinnedAt:    unixOrZero(pt.PinnedAt),
 		Description: pt.Description, Goal: pt.Goal, CreatedAt: pt.CreatedAt.Unix(), Paused: pt.Paused, Queued: pt.Queued,
 		QueuedAt: unixNanoOrZero(pt.QueuedAt), QueueMode: pt.QueueMode,
@@ -1938,3 +1942,6 @@ func (t *Task) drainTriggers() []agent.TriggerEvent {
 	t.pendingTriggers = nil
 	return ev
 }
+
+// projectIDOf returns the project of a task (0 for nil).
+func (t *Task) projectIDOf() int64 { return t.lifecycleSnapshot().ProjectID }

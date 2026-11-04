@@ -54,12 +54,12 @@ func writeTaskCategoryError(w http.ResponseWriter, err error) {
 	}
 }
 
-func (s *Server) pgListTaskCategories(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) pgListTaskCategories(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
 	if pg == nil {
 		return
 	}
-	categories, err := pg.ListTaskCategories()
+	categories, err := pg.ListTaskCategoriesForProject(requestProject(r))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -76,7 +76,7 @@ func (s *Server) pgCreateTaskCategory(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	category, err := pg.CreateTaskCategory(*request.Name)
+	category, err := pg.CreateTaskCategoryInProject(requestProject(r), *request.Name)
 	if err != nil {
 		writeTaskCategoryError(w, err)
 		return

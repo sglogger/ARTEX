@@ -160,6 +160,7 @@ type FindingFilter struct {
 	Status    string // pending | false_positive | ignored | resolved
 	VulnClass string
 	TaskID    string // task id (as a string; empty/invalid = no task filter)
+	ProjectID int64  // project (engagement); 0 = all projects. Findings belong to a project through their task.
 	Query     string // fuzzy search keyword over name/class/summary/evidence/report body
 	Sort      string // "severity" | "time"
 	// AssetScope is an asset tree node key (a:<id> / c:<id> / r:<domain> / __none__);
@@ -199,6 +200,10 @@ func (f FindingFilter) where() (string, []any) {
 	} else if tid, err := strconv.ParseInt(f.TaskID, 10, 64); err == nil && tid > 0 {
 		args = append(args, tid)
 		conds = append(conds, fmt.Sprintf("f.task_id = $%d", len(args)))
+	}
+	if f.ProjectID > 0 {
+		args = append(args, f.ProjectID)
+		conds = append(conds, fmt.Sprintf("f.task_id IN (SELECT id FROM tasks WHERE project_id = $%d)", len(args)))
 	}
 	// Asset filter: asset_ids is a jsonb array, and @> ANY(...) can use idx_findings_asset_ids.
 	switch {
@@ -556,6 +561,15 @@ type FindingTaskOption struct {
 // FindingStats returns whole-table counts (by severity + pending) and the sorted
 // set of distinct vuln classes.
 func (d *DB) FindingStats() (*FindingStats, error) {
+	return d.FindingStatsForProject(0)
+}
+
+// projectFindingsCond limits a findings query (alias f) to a project's tasks; $1 is the project id, 0 = all.
+const projectFindingsCond = `($1::bigint = 0 OR f.task_id IN (SELECT id FROM tasks WHERE project_id = $1))`
+
+// FindingStatsForProject counts the findings of one project (0 = all projects;
+// archived task aggregates are only included for all projects because they carry no task).
+func (d *DB) FindingStatsForProject(projectID int64) (*FindingStats, error) {
 	st := &FindingStats{VulnClasses: []string{}, Tasks: []FindingTaskOption{}}
 	err := d.QueryRow(`SELECT
 		COUNT(*),
@@ -564,11 +578,11 @@ func (d *DB) FindingStats() (*FindingStats, error) {
 		COUNT(*) FILTER (WHERE severity = 'high'),
 		COUNT(*) FILTER (WHERE severity = 'medium'),
 		COUNT(*) FILTER (WHERE severity = 'low')
-		FROM findings`).Scan(&st.Total, &st.Pending, &st.Critical, &st.High, &st.Medium, &st.Low)
+		FROM findings f WHERE `+projectFindingsCond, projectID).Scan(&st.Total, &st.Pending, &st.Critical, &st.High, &st.Medium, &st.Low)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := d.Query(`SELECT DISTINCT vulnclass FROM findings WHERE vulnclass <> '' ORDER BY vulnclass`)
+	rows, err := d.Query(`SELECT DISTINCT vulnclass FROM findings f WHERE vulnclass <> '' AND `+projectFindingsCond+` ORDER BY vulnclass`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -588,9 +602,9 @@ func (d *DB) FindingStats() (*FindingStats, error) {
 	trows, err := d.Query(`SELECT f.task_id, COALESCE(t.name, ''), COALESCE(t.description, ''), COUNT(*)
 		FROM findings f
 		LEFT JOIN tasks t ON f.task_id = t.id
-		WHERE f.task_id IS NOT NULL
+		WHERE f.task_id IS NOT NULL AND `+projectFindingsCond+`
 		GROUP BY f.task_id, t.name, t.description
-		ORDER BY MAX(f.created_at) DESC`)
+		ORDER BY MAX(f.created_at) DESC`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -605,9 +619,11 @@ func (d *DB) FindingStats() (*FindingStats, error) {
 	if err := trows.Err(); err != nil {
 		return nil, err
 	}
-	archived, err := d.archivedTaskAggregates()
-	if err != nil {
-		return nil, err
+	var archived []taskArchiveAggregate
+	if projectID == 0 {
+		if archived, err = d.archivedTaskAggregates(); err != nil {
+			return nil, err
+		}
 	}
 	vulnclasses := make(map[string]bool, len(st.VulnClasses))
 	for _, vulnclass := range st.VulnClasses {

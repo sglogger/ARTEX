@@ -38,6 +38,7 @@ type TaskDTO struct {
 	Name               string             `json:"name"` // optional task name; empty = untitled
 	CategoryID         *int64             `json:"category_id,omitempty"`
 	CategoryName       string             `json:"category_name,omitempty"`
+	ProjectID          int64              `json:"project_id"`
 	Pinned             bool               `json:"pinned"`
 	PinnedAt           string             `json:"pinned_at,omitempty"`
 	Description        string             `json:"description"`
@@ -120,6 +121,7 @@ func taskDTO(t *Task, status string) TaskDTO {
 		Name:               lifecycle.Name,
 		CategoryID:         lifecycle.CategoryID,
 		CategoryName:       lifecycle.CategoryName,
+		ProjectID:          lifecycle.ProjectID,
 		Pinned:             lifecycle.PinnedAt > 0,
 		PinnedAt:           completedRFC(lifecycle.PinnedAt),
 		Description:        lifecycle.Description,

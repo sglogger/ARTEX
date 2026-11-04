@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -28,7 +29,9 @@ func findingPaginationParam(raw string, fallback, upperBound int) int {
 // findingFilterFromQuery builds the shared findings filter from a request's
 // query string. List / groups / asset tree / export share the same parsing; new filters only change this place.
 func findingFilterFromQuery(q url.Values) db.FindingFilter {
+	project, _ := strconv.ParseInt(strings.TrimSpace(q.Get("project")), 10, 64)
 	return db.FindingFilter{
+		ProjectID: max(project, 0),
 		Severity:  normFilter(q.Get("severity")),
 		Status:    normFilter(q.Get("status")),
 		VulnClass: normFilter(q.Get("vulnclass")),
@@ -40,10 +43,19 @@ func findingFilterFromQuery(q url.Values) db.FindingFilter {
 	}
 }
 
+// findingFilterFromRequest adds the request's project (header or query) to the query filter.
+func findingFilterFromRequest(r *http.Request) db.FindingFilter {
+	f := findingFilterFromQuery(r.URL.Query())
+	if p := requestProject(r); p > 0 {
+		f.ProjectID = p
+	}
+	return f
+}
+
 // findingAssetTree serves the "by asset" view's left-hand tree: every asset that
 // carries at least one matching finding, plus the ancestors needed to place it.
 func (s *Server) findingAssetTree(w http.ResponseWriter, r *http.Request) {
-	tree, err := s.m.pg.BuildFindingAssetTree(findingFilterFromQuery(r.URL.Query()))
+	tree, err := s.m.pg.BuildFindingAssetTree(findingFilterFromRequest(r))
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return
@@ -59,7 +71,7 @@ func (s *Server) findingGroups(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	page := findingPaginationParam(q.Get("page"), 1, 0)
 	limit := findingPaginationParam(q.Get("limit"), 10, 100)
-	groups, total, findingTotal, err := s.m.pg.ListFindingGroups(findingFilterFromQuery(q), page, limit)
+	groups, total, findingTotal, err := s.m.pg.ListFindingGroups(findingFilterFromRequest(r), page, limit)
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return

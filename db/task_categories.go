@@ -24,9 +24,10 @@ var (
 	ErrTaskCategoryTaskNotFound = errors.New("task not found")
 )
 
-// TaskCategory is a globally reusable task grouping label.
+// TaskCategory groups tasks inside one project.
 type TaskCategory struct {
 	ID        int64     `json:"id"`
+	ProjectID int64     `json:"project_id"`
 	Name      string    `json:"name"`
 	NKey      string    `json:"-"`
 	TaskCount int       `json:"task_count"`
@@ -36,11 +37,11 @@ type TaskCategory struct {
 
 const taskCategoryCols = `category.id, category.name, category.nkey,
        count(task.id) FILTER (WHERE task.deleted_at IS NULL),
-       category.created_at, category.updated_at`
+       category.created_at, category.updated_at, COALESCE(category.project_id,0)`
 
 func scanTaskCategory(row interface{ Scan(...any) error }) (TaskCategory, error) {
 	var category TaskCategory
-	err := row.Scan(&category.ID, &category.Name, &category.NKey, &category.TaskCount, &category.CreatedAt, &category.UpdatedAt)
+	err := row.Scan(&category.ID, &category.Name, &category.NKey, &category.TaskCount, &category.CreatedAt, &category.UpdatedAt, &category.ProjectID)
 	return category, err
 }
 
@@ -60,20 +61,29 @@ func taskCategoryUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
+// CreateTaskCategory creates a category in the default project.
 func (d *DB) CreateTaskCategory(name string) (*TaskCategory, error) {
+	return d.CreateTaskCategoryInProject(0, name)
+}
+
+// CreateTaskCategoryInProject creates a category; names are unique per project.
+func (d *DB) CreateTaskCategoryInProject(projectID int64, name string) (*TaskCategory, error) {
 	name, nkey, err := normalizeTaskCategoryName(name)
 	if err != nil {
 		return nil, err
 	}
+	if projectID, err = d.ResolveProject(projectID); err != nil {
+		return nil, err
+	}
 	category, err := scanTaskCategory(d.QueryRow(`
 WITH inserted AS (
-    INSERT INTO task_categories(name, nkey)
-    VALUES ($1,$2)
-    ON CONFLICT (nkey) DO NOTHING
+    INSERT INTO task_categories(name, nkey, project_id)
+    VALUES ($1,$2,$3)
+    ON CONFLICT (project_id, nkey) DO NOTHING
     RETURNING *
 )
-SELECT inserted.id, inserted.name, inserted.nkey, 0, inserted.created_at, inserted.updated_at
-FROM inserted`, name, nkey))
+SELECT inserted.id, inserted.name, inserted.nkey, 0, inserted.created_at, inserted.updated_at, inserted.project_id
+FROM inserted`, name, nkey, projectID))
 	if err == sql.ErrNoRows {
 		return nil, ErrTaskCategoryNameConflict
 	}
@@ -84,12 +94,18 @@ FROM inserted`, name, nkey))
 }
 
 func (d *DB) ListTaskCategories() ([]*TaskCategory, error) {
+	return d.ListTaskCategoriesForProject(0)
+}
+
+// ListTaskCategoriesForProject lists one project's categories (0 = all projects).
+func (d *DB) ListTaskCategoriesForProject(projectID int64) ([]*TaskCategory, error) {
 	rows, err := d.Query(`
-SELECT ` + taskCategoryCols + `
+SELECT `+taskCategoryCols+`
 FROM task_categories category
 LEFT JOIN tasks task ON task.category_id=category.id
+WHERE $1::bigint = 0 OR category.project_id=$1
 GROUP BY category.id
-ORDER BY category.name, category.id`)
+ORDER BY category.name, category.id`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +148,7 @@ WITH updated AS (
 )
 SELECT updated.id, updated.name, updated.nkey,
        (SELECT count(*) FROM tasks WHERE category_id=updated.id AND deleted_at IS NULL),
-       updated.created_at, updated.updated_at
+       updated.created_at, updated.updated_at, COALESCE(updated.project_id,0)
 FROM updated`, id, name, nkey))
 	if err == sql.ErrNoRows {
 		return nil, ErrTaskCategoryNotFound
@@ -181,12 +197,12 @@ WITH selected AS (
     SELECT * FROM task_categories WHERE id=$2
 ), updated AS (
     UPDATE tasks SET category_id=$2
-    WHERE id=$1 AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM selected)
+    WHERE id=$1 AND deleted_at IS NULL AND project_id=(SELECT project_id FROM selected)
     RETURNING id
 )
 SELECT selected.id, selected.name, selected.nkey,
        (SELECT count(*) FROM tasks WHERE category_id=selected.id AND deleted_at IS NULL),
-       selected.created_at, selected.updated_at
+       selected.created_at, selected.updated_at, COALESCE(selected.project_id,0)
 FROM selected, updated`, taskID, *categoryID))
 	if err == sql.ErrNoRows {
 		var taskExists bool
@@ -244,6 +260,7 @@ func (d *DB) SetTasksCategory(taskIDs []int64, categoryID *int64) ([]int64, *Tas
 	rows, err := tx.Query(`
 UPDATE tasks SET category_id=$2
 WHERE id=ANY($1::bigint[]) AND deleted_at IS NULL
+  AND ($2::bigint IS NULL OR project_id=(SELECT project_id FROM task_categories WHERE id=$2))
 RETURNING id`, taskIDs, categoryID)
 	if err != nil {
 		return nil, nil, err

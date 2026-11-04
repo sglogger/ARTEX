@@ -44,7 +44,11 @@ func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 		out["traffic"] = c
 		out["traffic_enabled"] = true
 	}
-	if counts, err := s.m.Assets().CountsByType(); err == nil {
+	countAssets := s.m.Assets().CountsByType
+	if project := requestProject(r); project > 0 {
+		countAssets = func() (map[string]int, error) { return s.m.Assets().CountsByTypeForProject(project) }
+	}
+	if counts, err := countAssets(); err == nil {
 		total := 0
 		for _, n := range counts {
 			total += n

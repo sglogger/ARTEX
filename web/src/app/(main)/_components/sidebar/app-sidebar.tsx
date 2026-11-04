@@ -20,6 +20,7 @@ import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
 
 import { NavMain } from "./nav-main";
 import { NavUser } from "./nav-user";
+import { ProjectSwitcher } from "./project-switcher";
 import { SidebarSupportCard } from "./sidebar-support-card";
 
 
@@ -50,6 +51,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
+        <ProjectSwitcher />
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={sidebarItems} />

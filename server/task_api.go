@@ -27,7 +27,11 @@ func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dtos := make([]TaskDTO, 0, len(list))
+	project := requestProject(r)
 	for _, t := range list {
+		if project > 0 && t.projectIDOf() != project {
+			continue
+		}
 		dto := taskDTO(t, s.resolvedTaskStatus(t))
 		taskID, _ := strconv.ParseInt(t.ID, 10, 64)
 		dto.Completion = completionDTO(completions[taskID])
@@ -127,6 +131,7 @@ func (s *Server) control(w http.ResponseWriter, r *http.Request) {
 type createTaskReq struct {
 	Name                 string   `json:"name,omitempty"` // optional task name; omitted/empty = untitled
 	CategoryID           *int64   `json:"category_id,omitempty"`
+	ProjectID            int64    `json:"project_id,omitempty"` // project; omitted = the request's project, then the default project
 	Description          string   `json:"description"`
 	Goal                 string   `json:"goal"`
 	LLMProfileID         *int64   `json:"llm_profile_id,omitempty"`    // LLM profile that runs this task; omitted/null = use the active profile
@@ -179,6 +184,18 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 		seenSources[id] = true
 		sourceIDs = append(sourceIDs, id)
 	}
+	projectID, err := s.createProject(r, req.ProjectID)
+	if err != nil {
+		projectHTTPError(w, err)
+		return
+	}
+	// Tasks only inherit from tasks of the same project, so engagements stay apart.
+	for _, id := range sourceIDs {
+		if s.m.pg.TaskProjectID(id) != projectID {
+			writeErr(w, 400, fmt.Sprintf("linked task #%d belongs to another project", id))
+			return
+		}
+	}
 	companyIDs, err := db.NormalizeTaskCompanyIDs(req.CompanyIDs)
 	if err != nil {
 		writeErr(w, 400, fmt.Sprintf("invalid linked companies: select at most %d valid companies", db.MaxTaskCompanyCount))
@@ -191,7 +208,7 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t, err := s.m.CreateTaskWithOptions(req.Description, req.Goal, db.TaskCreateOptions{
-		Name: strings.TrimSpace(req.Name), CategoryID: req.CategoryID,
+		Name: strings.TrimSpace(req.Name), CategoryID: req.CategoryID, ProjectID: projectID,
 		SourceTaskIDs: sourceIDs, CompanyIDs: req.CompanyIDs, LLMProfileIDs: req.LLMProfileIDs,
 		TimeoutSeconds: req.TimeoutSeconds, PlanHeartbeatSeconds: req.PlanHeartbeatSeconds,
 		CoverageEnabled: req.CoverageEnabled,

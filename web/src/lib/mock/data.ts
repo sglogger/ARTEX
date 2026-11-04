@@ -46,6 +46,7 @@ import type {
   TrafficHost,
   TrafficResp,
   VulnIntelSettings,
+  Project,
 } from "@/lib/types";
 
 const T = (iso: string) => iso; // readability helper for timestamps
@@ -3425,6 +3426,20 @@ export const tools: Tool[] = [
 ];
 
 // ── Settings ─────────────────────────────────────────────────────────────────
+export const projects: Project[] = [
+  {
+    id: 1, name: "Standard", client: "", description: "", status: "active", is_default: true,
+    created_at: "2026-10-01T08:00:00Z", updated_at: "2026-10-01T08:00:00Z",
+    tasks: 4, running_tasks: 1, conversations: 3, findings: { critical: 0, high: 1, medium: 2, low: 1, info: 0 },
+  },
+  {
+    id: 2, name: "Web platform Q4", client: "Example AG", description: "External test of the customer portal.", status: "active",
+    start_date: "2026-11-01T00:00:00Z", end_date: "2026-11-15T00:00:00Z", is_default: false,
+    created_at: "2026-11-01T08:00:00Z", updated_at: "2026-11-02T08:00:00Z",
+    tasks: 2, running_tasks: 0, conversations: 1, findings: { critical: 1, high: 2, medium: 0, low: 1, info: 2 },
+  },
+];
+
 export const vulnIntel: VulnIntelSettings = {
   sources: [
     { id: "nvd", name: "NVD (NIST)", description: "CVE database with CPE version ranges, CVSS and references.", url: "https://nvd.nist.gov/developers/request-an-api-key", key: "optional", enabled: true, key_set: false },

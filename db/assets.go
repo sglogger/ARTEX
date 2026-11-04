@@ -1181,6 +1181,41 @@ func pageClause(args *[]any, limit, offset int) string {
 
 // QueryByTask returns assets rows that have a given task_id in task_ids.
 func (s *AssetStore) QueryByTask(taskID int64, typ string, limit, offset int) ([]*Asset, error) {
+	assets, err := s.queryByScope(`$1 = ANY(task_ids)`, taskID, typ, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.hydrateTaskAssetSources(taskID, assets); err != nil {
+		return nil, err
+	}
+	return assets, nil
+}
+
+// projectAssetsCond matches assets linked to any task of project $1.
+const projectAssetsCond = `task_ids && ARRAY(SELECT id FROM tasks WHERE project_id = $1)`
+
+// QueryByProject lists the assets of a project's tasks (the shared store, filtered).
+func (s *AssetStore) QueryByProject(projectID int64, typ string, limit, offset int) ([]*Asset, error) {
+	return s.queryByScope(projectAssetsCond, projectID, typ, limit, offset)
+}
+
+// CountByProject counts the assets of a project's tasks.
+func (s *AssetStore) CountByProject(projectID int64, typ string) (int, error) {
+	return s.countByScope(projectAssetsCond, projectID, typ)
+}
+
+// CountsByTypeForProject counts a project's assets per type.
+func (s *AssetStore) CountsByTypeForProject(projectID int64) (map[string]int, error) {
+	rows, err := s.db.Query(`SELECT type, COUNT(*) FROM assets WHERE `+projectAssetsCond+` GROUP BY type`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanTypeCounts(rows)
+}
+
+// queryByScope lists assets matching cond, where $1 is scopeArg.
+func (s *AssetStore) queryByScope(cond string, scopeArg int64, typ string, limit, offset int) ([]*Asset, error) {
 	q := `SELECT id, type, company_id, array_to_json(task_ids)::text,
        COALESCE(domain,''), COALESCE(root_domain,''), COALESCE(ip,''),
        COALESCE(c_segment::text,''), port,
@@ -1191,8 +1226,8 @@ func (s *AssetStore) QueryByTask(taskID int64, typ string, limit, offset int) ([
        COALESCE(favicon_mmh3,''), status_code, content_length,
        COALESCE(page_title,''), array_to_json(technologies)::text, array_to_json(auth)::text,
        COALESCE(method,''), array_to_json(params)::text, extra, last_seen::text
-FROM assets WHERE $1 = ANY(task_ids)`
-	args := []any{taskID}
+FROM assets WHERE ` + cond
+	args := []any{scopeArg}
 	if typ != "" {
 		args = append(args, typ)
 		q += fmt.Sprintf(` AND type = $%d`, len(args))
@@ -1203,19 +1238,16 @@ FROM assets WHERE $1 = ANY(task_ids)`
 		return nil, err
 	}
 	defer rows.Close()
-	assets, err := scanAssets(rows)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.hydrateTaskAssetSources(taskID, assets); err != nil {
-		return nil, err
-	}
-	return assets, nil
+	return scanAssets(rows)
 }
 
 func (s *AssetStore) CountByTask(taskID int64, typ string) (int, error) {
-	q := `SELECT count(*) FROM assets WHERE $1 = ANY(task_ids)`
-	args := []any{taskID}
+	return s.countByScope(`$1 = ANY(task_ids)`, taskID, typ)
+}
+
+func (s *AssetStore) countByScope(cond string, scopeArg int64, typ string) (int, error) {
+	q := `SELECT count(*) FROM assets WHERE ` + cond
+	args := []any{scopeArg}
 	if typ != "" {
 		args = append(args, typ)
 		q += fmt.Sprintf(` AND type = $%d`, len(args))

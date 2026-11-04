@@ -6,6 +6,7 @@
 import type { ChatMention } from "@/lib/chat-mentions";
 import { MOCK } from "@/lib/mock/enabled";
 import { mockHandle } from "@/lib/mock/handler";
+import { PROJECT_HEADER, projectHeaders } from "@/lib/project";
 import type {
   ActiveFindingRetest,
   Activity,
@@ -77,6 +78,8 @@ import type {
   PromptVersion,
   SessionTokenUsage,
   ProfessionalReportRequest,
+  Project,
+  ProjectInput,
   Settings,
   VulnIntelSettings,
   Severity,
@@ -129,6 +132,7 @@ export async function http<T>(path: string, init?: RequestInit): Promise<T> {
     headers: {
       ...(init?.body ? { "Content-Type": "application/json" } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...projectHeaders(),
       ...(init?.headers as Record<string, string> | undefined),
     },
   });
@@ -268,9 +272,23 @@ export const api = {
       new_password: newPassword,
     }),
 
+  // ---- projects (engagements); the active project is sent as a header with every request ----
+  projects: () => get<{ projects: Project[] }>("/projects").then((r) => arr(r.projects)),
+  createProject: (input: ProjectInput) => post<Project>("/projects", input),
+  updateProject: (id: number, input: Partial<ProjectInput> & { status?: "active" | "archived" }) =>
+    patch<Project>(`/projects/${id}`, input),
+  deleteProject: (id: number) => del<{ deleted: boolean }>(`/projects/${id}`),
+  moveTasksToProject: (id: number, taskIds: string[]) =>
+    post<{ moved: number }>(`/projects/${id}/tasks`, { task_ids: taskIds }),
+  moveConversationToProject: (conversationId: number, projectId: number) =>
+    post<{ moved: boolean }>(`/conversations/${conversationId}/project`, { project_id: projectId }),
+
   // ---- tasks ----
   tasks: () =>
     get<{ tasks: Task[]; active: string }>("/tasks").then((r) => ({ tasks: arr(r.tasks), active: r.active ?? "" })),
+  // Tasks of every project regardless of the active one ("0" overrides the project header).
+  allTasks: () =>
+    http<{ tasks: Task[] }>("/tasks", { headers: { [PROJECT_HEADER]: "0" } }).then((r) => arr(r.tasks)),
   task: (id: string) => get<Task>(`/tasks/${encodeURIComponent(id)}`),
   updateTaskEngagement: (
     id: string,
@@ -669,7 +687,7 @@ export const api = {
     }
     const token = getToken();
     const r = await fetch(`/api/exploration/findings/export?${p.toString()}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...projectHeaders() },
     });
     if (!r.ok) throw new Error(`export: ${r.status}`);
     const blob = await r.blob();
@@ -975,7 +993,11 @@ export const api = {
     const token = getToken();
     const r = await fetch(`/api/reports/professional`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...projectHeaders(),
+      },
       body: JSON.stringify(req),
     });
     if (!r.ok) {

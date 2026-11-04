@@ -35,7 +35,7 @@ func (s *Server) findings(w http.ResponseWriter, r *http.Request) {
 		}
 		page := findingPaginationParam(q.Get("page"), 1, 0)
 		limit := findingPaginationParam(q.Get("limit"), 20, 200)
-		fs, total, err := s.m.pg.ListFindingsPage(findingFilterFromQuery(q), page, limit)
+		fs, total, err := s.m.pg.ListFindingsPage(findingFilterFromRequest(r), page, limit)
 		if err != nil {
 			writeErr(w, 500, err.Error())
 			return
@@ -152,12 +152,13 @@ func (s *Server) resolveAssetIDs(ids []int64) map[int64]*db.Asset {
 // findingStats serves the whole-table aggregates (stat cards + vuln-class filter)
 // for the paginated findings page.
 func (s *Server) findingStats(w http.ResponseWriter, r *http.Request) {
-	st, err := s.m.pg.FindingStats()
+	project := requestProject(r)
+	st, err := s.m.pg.FindingStatsForProject(project)
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	st.Distinct, err = s.m.pg.DistinctFindingStats("")
+	st.Distinct, err = s.m.pg.DistinctFindingStatsFiltered(db.FindingFilter{ProjectID: project})
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return
@@ -242,9 +243,10 @@ func (s *Server) findingsExport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "all":
-		// Empty filter = no conditions.
+		// Empty filter = every finding of the request's project (all projects without one).
+		filter.ProjectID = requestProject(r)
 	case "filtered", "":
-		filter = findingFilterFromQuery(q)
+		filter = findingFilterFromRequest(r)
 	default:
 		writeErr(w, 400, "bad scope: "+scope)
 		return

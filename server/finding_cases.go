@@ -57,7 +57,7 @@ func (s *Server) listFindingCases(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	page := findingPaginationParam(q.Get("page"), 1, 0)
 	size := findingPaginationParam(q.Get("limit"), 20, 100)
-	rows, total, err := s.m.pg.ListFindingCases(findingFilterFromQuery(q), page, size)
+	rows, total, err := s.m.pg.ListFindingCases(findingFilterFromRequest(r), page, size)
 	if err != nil {
 		caseHTTPError(w, err)
 		return
@@ -441,7 +441,7 @@ func (s *Server) queueFindingCaseReview(ids []int64) ([]map[string]any, error) {
 			return nil, err
 		}
 		msg := fmt.Sprintf("Selected report review: only process the selected finding_ids=%s of this task. First keep/generate each standalone report, then judge within the selection whether they are the same defect; if clear, merge automatically and update the unified report. If unsure, keep the standalone reports; you may submit a suspected-duplicate suggestion for later review, but you must not wait for human confirmation or block report generation. If already grouped, read all members and their actual versions before generating the unified report. Do not merge unselected records and do not probe targets.", raw)
-		c, err := s.m.pg.CreateConversation("reporter", "Finding review · task#"+t.ID, nil)
+		c, err := s.m.pg.CreateConversationInProject(t.projectIDOf(), "reporter", "Finding review · task#"+t.ID, nil)
 		if err != nil {
 			return nil, err
 		}

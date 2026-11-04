@@ -1605,3 +1605,40 @@ ALTER TABLE task_completions ADD COLUMN IF NOT EXISTS failure_digest TEXT NOT NU
 ALTER TABLE task_completions ADD COLUMN IF NOT EXISTS failure_profile TEXT NOT NULL DEFAULT '';
 ALTER TABLE task_completions ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMPTZ;
 ALTER TABLE task_completions ADD COLUMN IF NOT EXISTS recovery_action TEXT NOT NULL DEFAULT '';
+
+-- Projects (engagements) bundle tasks, chats and task categories so separate assignments
+-- can be worked on and reported separately. Findings belong to a project through their task;
+-- assets and traffic stay one shared store and are filtered through the project's tasks.
+-- Everything that existed before projects is moved into the default project "Standard".
+CREATE TABLE IF NOT EXISTS projects (
+    id          BIGSERIAL PRIMARY KEY,
+    name        TEXT NOT NULL,
+    client      TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
+    start_date  DATE,
+    end_date    DATE,
+    is_default  BOOLEAN NOT NULL DEFAULT false,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_default ON projects(is_default) WHERE is_default;
+DROP TRIGGER IF EXISTS trg_projects_upd ON projects;
+CREATE TRIGGER trg_projects_upd BEFORE UPDATE ON projects
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+INSERT INTO projects(name, is_default)
+SELECT 'Standard', true WHERE NOT EXISTS (SELECT 1 FROM projects WHERE is_default);
+
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS project_id BIGINT REFERENCES projects(id) ON DELETE RESTRICT;
+UPDATE tasks SET project_id=(SELECT id FROM projects WHERE is_default) WHERE project_id IS NULL;
+CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id) WHERE deleted_at IS NULL;
+
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS project_id BIGINT REFERENCES projects(id) ON DELETE RESTRICT;
+UPDATE conversations SET project_id=(SELECT id FROM projects WHERE is_default) WHERE project_id IS NULL;
+CREATE INDEX IF NOT EXISTS idx_conversations_project ON conversations(project_id);
+
+-- Category names are unique per project, not globally.
+ALTER TABLE task_categories ADD COLUMN IF NOT EXISTS project_id BIGINT REFERENCES projects(id) ON DELETE CASCADE;
+UPDATE task_categories SET project_id=(SELECT id FROM projects WHERE is_default) WHERE project_id IS NULL;
+ALTER TABLE task_categories DROP CONSTRAINT IF EXISTS task_categories_nkey_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_task_categories_project_nkey ON task_categories(project_id, nkey);

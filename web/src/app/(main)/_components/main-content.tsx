@@ -8,6 +8,7 @@ import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { api } from "@/lib/api";
+import { useActiveProjectId } from "@/lib/project";
 import { cn } from "@/lib/utils";
 
 import { AccountSwitcher } from "./sidebar/account-switcher";
@@ -35,6 +36,8 @@ function isFullBleed(pathname: string) {
 export function MainContent({ children }: { children: ReactNode }) {
   const currentUser = useCurrentUser();
   const pathname = usePathname();
+  // Switching the project remounts the page, so it reloads its data with the new project header.
+  const projectId = useActiveProjectId();
   const [version, setVersion] = useState("");
   const [releaseVersion, setReleaseVersion] = useState("");
 
@@ -51,6 +54,7 @@ export function MainContent({ children }: { children: ReactNode }) {
   if (isFullBleed(pathname)) {
     return <>{children}</>;
   }
+  // The project key only wraps list pages; task detail pages above show one task regardless of the project.
 
   return (
     <>
@@ -79,7 +83,9 @@ export function MainContent({ children }: { children: ReactNode }) {
         </div>
       </header>
       <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden p-4 has-data-[content-padding=false]:p-0 md:p-6 md:has-data-[content-padding=false]:p-0">
-        {children}
+        <div key={projectId || "all"} className="contents">
+          {children}
+        </div>
       </div>
     </>
   );

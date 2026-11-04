@@ -54,6 +54,7 @@ type Conversation struct {
 	AgentKey     string     `json:"agent_key"`
 	Title        string     `json:"title"`
 	LLMProfileID *int64     `json:"llm_profile_id,omitempty"`
+	ProjectID    int64      `json:"project_id"`
 	Pinned       bool       `json:"pinned"`
 	PinnedAt     *time.Time `json:"pinned_at,omitempty"`
 	CreatedAt    time.Time  `json:"created_at"`
@@ -66,12 +67,12 @@ type ConversationPatch struct {
 	Pinned *bool
 }
 
-const convCols = `id, agent_key, title, llm_profile_id, pinned_at, created_at, updated_at`
+const convCols = `id, agent_key, title, llm_profile_id, pinned_at, created_at, updated_at, COALESCE(project_id,0)`
 
 func scanConv(row interface{ Scan(...any) error }) (Conversation, error) {
 	var c Conversation
 	var pinnedAt sql.NullTime
-	err := row.Scan(&c.ID, &c.AgentKey, &c.Title, &c.LLMProfileID, &pinnedAt, &c.CreatedAt, &c.UpdatedAt)
+	err := row.Scan(&c.ID, &c.AgentKey, &c.Title, &c.LLMProfileID, &pinnedAt, &c.CreatedAt, &c.UpdatedAt, &c.ProjectID)
 	if pinnedAt.Valid {
 		c.Pinned = true
 		c.PinnedAt = &pinnedAt.Time
@@ -81,19 +82,28 @@ func scanConv(row interface{ Scan(...any) error }) (Conversation, error) {
 
 // CreateConversation opens a new chat thread for agentKey with an initial title.
 // llmProfileID may be nil to use the globally active profile.
+// CreateConversation creates a chat in the default project.
 func (d *DB) CreateConversation(agentKey, title string, llmProfileID *int64) (*Conversation, error) {
+	return d.CreateConversationInProject(0, agentKey, title, llmProfileID)
+}
+
+// CreateConversationInProject creates a chat in a project (0 = the default project).
+func (d *DB) CreateConversationInProject(projectID int64, agentKey, title string, llmProfileID *int64) (*Conversation, error) {
 	tx, err := d.Begin()
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
 
+	if projectID, err = resolveProjectTx(tx, projectID); err != nil {
+		return nil, err
+	}
 	// Insert the child without a profile first. The new row is exclusively owned
 	// by this transaction before it takes a profile lock, matching DeleteProfile's
 	// child-row -> profile-row protocol.
 	c, err := scanConv(tx.QueryRow(`
-INSERT INTO conversations(agent_key, title, llm_profile_id) VALUES ($1, $2, NULL)
-RETURNING `+convCols, agentKey, title))
+INSERT INTO conversations(agent_key, title, llm_profile_id, project_id) VALUES ($1, $2, NULL, $3)
+RETURNING `+convCols, agentKey, title, projectID))
 	if err != nil {
 		return nil, err
 	}
@@ -140,8 +150,14 @@ func (d *DB) UpdateConversationProfile(id int64, llmProfileID *int64) error {
 
 // ListConversations returns all threads, most-recently-updated first.
 func (d *DB) ListConversations() ([]*Conversation, error) {
-	rows, err := d.Query(`SELECT ` + convCols + ` FROM conversations
-ORDER BY (pinned_at IS NOT NULL) DESC, pinned_at DESC NULLS LAST, updated_at DESC, id DESC`)
+	return d.ListConversationsForProject(0)
+}
+
+// ListConversationsForProject lists one project's chats (0 = all projects).
+func (d *DB) ListConversationsForProject(projectID int64) ([]*Conversation, error) {
+	rows, err := d.Query(`SELECT `+convCols+` FROM conversations
+WHERE $1::bigint = 0 OR project_id=$1
+ORDER BY (pinned_at IS NOT NULL) DESC, pinned_at DESC NULLS LAST, updated_at DESC, id DESC`, projectID)
 	if err != nil {
 		return nil, err
 	}

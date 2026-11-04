@@ -367,6 +367,16 @@ func (s *Server) listAssets(w http.ResponseWriter, r *http.Request) {
 			if err == nil && offset < total {
 				assets, err = as.QueryByTask(taskID, typ, limit, offset)
 			}
+		case requestProject(r) > 0:
+			// Inside a project the shared asset store shows only the assets of its tasks.
+			if typ == "" {
+				typ = "root_domain"
+			}
+			project := requestProject(r)
+			total, err = as.CountByProject(project, typ)
+			if err == nil && offset < total {
+				assets, err = as.QueryByProject(project, typ, limit, offset)
+			}
 		default:
 			if typ == "" {
 				typ = "root_domain"
@@ -403,6 +413,8 @@ func (s *Server) assetCounts(w http.ResponseWriter, r *http.Request) {
 	var err error
 	if taskID, _ := strconv.ParseInt(r.URL.Query().Get("task_id"), 10, 64); taskID > 0 {
 		counts, err = as.CountsByTypeForTask(taskID)
+	} else if project := requestProject(r); project > 0 {
+		counts, err = as.CountsByTypeForProject(project)
 	} else {
 		counts, err = as.CountsByType()
 	}

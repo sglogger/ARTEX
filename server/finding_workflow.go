@@ -126,6 +126,9 @@ func (s *Server) agentFindingTrafficAccess(ctx context.Context, id int64, write 
 	if f == nil {
 		return fmt.Errorf("%w: finding_id=%d. Evidence tools use the standalone finding record ID; read it from the finding_id field of list_task_findings / get_task_node_detail, and do not pass id / finding_node_id", db.ErrFindingNotFound, id)
 	}
+	if p := s.callerProject(ctx); p > 0 && (f.TaskID == nil || s.m.pg.TaskProjectID(*f.TaskID) != p) {
+		return fmt.Errorf("%w: finding_id=%d is not in this project", db.ErrFindingNotFound, id)
+	}
 	if ri := agent.RunInfoFrom(ctx); ri.TaskID > 0 {
 		task := s.m.ResolveTask(strconv.FormatInt(ri.TaskID, 10))
 		if task == nil {

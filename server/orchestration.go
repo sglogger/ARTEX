@@ -160,8 +160,8 @@ func (s *Server) delegateToTask(ctx context.Context, in json.RawMessage, pick fu
 		return actool.Errorf("task_id is required"), nil
 	}
 	t, ok := s.m.Task(head.TaskID)
-	if !ok {
-		return actool.Errorf("task not found: " + head.TaskID), nil
+	if !ok || !s.taskInCallerProject(ctx, t) {
+		return actool.Errorf(errOtherProject(head.TaskID)), nil
 	}
 	var m map[string]json.RawMessage
 	_ = json.Unmarshal(in, &m)
@@ -182,7 +182,7 @@ func (s *Server) toolListTasks() actool.CoreTool {
 	return roTool("list_tasks",
 		"List all tasks (id/description/goal/status/runtime/parent task/LLM profile). The orchestration agent uses it to get the big picture, spot tasks stuck too long, and see which LLM each one uses. Runtime: running = created→now, terminal = created→last activity (seconds). llm_profile: the profile name used by the task planner/worker; (active profile) = follows the global active profile.",
 		objSchema(map[string]any{}),
-		func(context.Context, json.RawMessage) (actool.Result, error) {
+		func(ctx context.Context, _ json.RawMessage) (actool.Result, error) {
 			lastAct, _ := s.m.PG().LastActivityAll()
 			// id -> name to resolve each task's pinned LLM profile.
 			profName := map[int64]string{}
@@ -193,6 +193,9 @@ func (s *Server) toolListTasks() actool.CoreTool {
 			}
 			out := make([]map[string]any, 0)
 			for _, t := range s.m.List() {
+				if !s.taskInCallerProject(ctx, t) {
+					continue // agents only see the tasks of their own project
+				}
 				status := s.deriveTaskStatus(t)
 				end := lastAct[t.ExpID]
 				if live := s.engine.LastActivity(t.ID); live > end {
@@ -292,8 +295,8 @@ func (s *Server) toolSpawnTask() actool.CoreTool {
 				if err != nil || id <= 0 || seenSources[id] {
 					return actool.Errorf("linked task id is invalid or duplicated"), nil
 				}
-				if _, ok := s.m.Task(strconv.FormatInt(id, 10)); !ok {
-					return actool.Errorf(fmt.Sprintf("linked task #%d not found", id)), nil
+				if src, ok := s.m.Task(strconv.FormatInt(id, 10)); !ok || !s.taskInCallerProject(ctx, src) {
+					return actool.Errorf(fmt.Sprintf("linked task #%d not found in this project", id)), nil
 				}
 				seenSources[id] = true
 				sourceIDs = append(sourceIDs, id)
@@ -306,8 +309,15 @@ func (s *Server) toolSpawnTask() actool.CoreTool {
 				}
 				pin = &id
 			} else if a.ParentRef != "" {
-				if pt, ok := s.m.Task(a.ParentRef); ok {
+				if pt, ok := s.m.Task(a.ParentRef); ok && s.taskInCallerProject(ctx, pt) {
 					pin = pt.LLMProfileID
+				}
+			}
+			// A spawned task joins the caller's project, or its parent's when called outside a run.
+			projectID := s.callerProject(ctx)
+			if projectID == 0 && a.ParentRef != "" {
+				if pt, ok := s.m.Task(a.ParentRef); ok {
+					projectID = pt.projectIDOf()
 				}
 			}
 			var llmIDs []int64
@@ -315,6 +325,7 @@ func (s *Server) toolSpawnTask() actool.CoreTool {
 				llmIDs = []int64{*pin}
 			}
 			t, err := s.m.CreateTaskWithOptions(a.Description, a.Goal, db.TaskCreateOptions{
+				ProjectID:            projectID,
 				SourceTaskIDs:        sourceIDs,
 				LLMProfileIDs:        llmIDs,
 				TimeoutSeconds:       a.TimeoutSeconds,
@@ -340,14 +351,14 @@ func (s *Server) toolSpawnTask() actool.CoreTool {
 func (s *Server) toolPauseTask() actool.CoreTool {
 	return wrTool("pause_task", "Pause the given task (stops its planner/worker loops).",
 		objSchema(map[string]any{"task_id": strParam("Id of the task to pause")}, "task_id"),
-		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
+		func(ctx context.Context, in json.RawMessage) (actool.Result, error) {
 			var a struct {
 				TaskID string `json:"task_id"`
 			}
 			_ = json.Unmarshal(in, &a)
 			t, ok := s.m.Task(a.TaskID)
-			if !ok {
-				return actool.Errorf("task not found: " + a.TaskID), nil
+			if !ok || !s.taskInCallerProject(ctx, t) {
+				return actool.Errorf(errOtherProject(a.TaskID)), nil
 			}
 			if _, err := s.applyTaskControlWithCause(t, "pause", agent.AbortPausedByOrchestrator); err != nil {
 				return actool.Errorf(err.Error()), nil

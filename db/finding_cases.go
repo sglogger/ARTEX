@@ -471,7 +471,11 @@ type FindingDistinctStats struct {
 }
 
 func (d *DB) DistinctFindingStats(taskID string) (*FindingDistinctStats, error) {
-	filter := FindingFilter{TaskID: taskID}
+	return d.DistinctFindingStatsFiltered(FindingFilter{TaskID: taskID})
+}
+
+// DistinctFindingStatsFiltered counts distinct defects for any findings filter (e.g. a project).
+func (d *DB) DistinctFindingStatsFiltered(filter FindingFilter) (*FindingDistinctStats, error) {
 	where, args := filter.where()
 	s := new(FindingDistinctStats)
 	err := d.QueryRow(`WITH observations AS (SELECT f.id,f.severity,COALESCE(m.case_id,0) cid FROM findings f LEFT JOIN tasks t ON t.id=f.task_id LEFT JOIN finding_case_members m ON m.finding_id=f.id`+where+`), defects AS (SELECT severity FROM observations WHERE cid=0 UNION ALL SELECT c.severity FROM finding_cases c WHERE c.id IN(SELECT cid FROM observations WHERE cid>0)) SELECT count(*),(SELECT count(*) FROM observations),count(*) FILTER(WHERE severity='critical'),count(*) FILTER(WHERE severity='high'),count(*) FILTER(WHERE severity='medium'),count(*) FILTER(WHERE severity='low'),count(*) FILTER(WHERE severity='') FROM defects`, args...).Scan(&s.Total, &s.Reports, &s.Critical, &s.High, &s.Medium, &s.Low, &s.Unassessed)

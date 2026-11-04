@@ -15,6 +15,7 @@ type Task struct {
 	Name          string     `json:"name"` // optional task name; empty = unnamed
 	CategoryID    *int64     `json:"category_id,omitempty"`
 	CategoryName  string     `json:"category_name,omitempty"`
+	ProjectID     int64      `json:"project_id"` // the project (engagement) the task belongs to
 	Pinned        bool       `json:"pinned"`
 	PinnedAt      *time.Time `json:"pinned_at,omitempty"`
 	Description   string     `json:"description"`
@@ -147,6 +148,7 @@ func (d *DB) CreateTask(description, goal string, llmProfileID *int64, timeoutSe
 // with the task/exploration row.
 type TaskCreateOptions struct {
 	Name                 string // optional task name; empty = unnamed
+	ProjectID            int64  // project (engagement); 0 = the default project
 	CategoryID           *int64
 	SourceTaskIDs        []int64
 	CompanyIDs           []int64
@@ -200,16 +202,24 @@ VALUES ($1, 'fact', $2, 0, 'origin', 'system')`, expID, string(originPayload)); 
 	}
 	opts.PlanHeartbeatSeconds = normalizeHeartbeat(opts.PlanHeartbeatSeconds)
 	coverageEnabled := opts.CoverageEnabled == nil || *opts.CoverageEnabled
+	projectID, err := resolveProjectTx(tx, opts.ProjectID)
+	if err != nil {
+		return nil, err
+	}
 	var categoryName string
 	if opts.CategoryID != nil {
 		if *opts.CategoryID <= 0 {
 			return nil, fmt.Errorf("%w: category id must be positive", ErrTaskCategoryInvalid)
 		}
-		if err := tx.QueryRow(`SELECT name FROM task_categories WHERE id=$1`, *opts.CategoryID).Scan(&categoryName); err != nil {
+		var categoryProject int64
+		if err := tx.QueryRow(`SELECT name, COALESCE(project_id,0) FROM task_categories WHERE id=$1`, *opts.CategoryID).Scan(&categoryName, &categoryProject); err != nil {
 			if err == sql.ErrNoRows {
 				return nil, ErrTaskCategoryNotFound
 			}
 			return nil, err
+		}
+		if categoryProject != projectID {
+			return nil, fmt.Errorf("%w: the category belongs to another project", ErrTaskCategoryInvalid)
 		}
 	}
 	var active *int64
@@ -218,7 +228,7 @@ VALUES ($1, 'fact', $2, 0, 'origin', 'system')`, expID, string(originPayload)); 
 		active = &id
 	}
 	t := &Task{
-		Name: opts.Name, CategoryID: opts.CategoryID, CategoryName: categoryName,
+		Name: opts.Name, CategoryID: opts.CategoryID, CategoryName: categoryName, ProjectID: projectID,
 		Description: description, Goal: goal, ExplorationID: expID,
 		LLMProfileID: active, ActiveLLMProfileID: active,
 		LLMProfileIDs:  append([]int64(nil), opts.LLMProfileIDs...),
@@ -228,9 +238,9 @@ VALUES ($1, 'fact', $2, 0, 'origin', 'system')`, expID, string(originPayload)); 
 		CoverageEnabled: coverageEnabled,
 	}
 	if err := tx.QueryRow(`
-INSERT INTO tasks(name, category_id, description, goal, exploration_id, llm_profile_id, active_llm_profile_id, timeout_seconds, plan_heartbeat_seconds, coverage_enabled)
-VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9)
-RETURNING id, status, paused, created_at`, opts.Name, opts.CategoryID, description, goal, expID, active, opts.TimeoutSeconds, opts.PlanHeartbeatSeconds, coverageEnabled).Scan(&t.ID, &t.Status, &t.Paused, &t.CreatedAt); err != nil {
+INSERT INTO tasks(name, category_id, description, goal, exploration_id, llm_profile_id, active_llm_profile_id, timeout_seconds, plan_heartbeat_seconds, coverage_enabled, project_id)
+VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10)
+RETURNING id, status, paused, created_at`, opts.Name, opts.CategoryID, description, goal, expID, active, opts.TimeoutSeconds, opts.PlanHeartbeatSeconds, coverageEnabled, projectID).Scan(&t.ID, &t.Status, &t.Paused, &t.CreatedAt); err != nil {
 		return nil, err
 	}
 	if err := insertTaskRelations(tx, t.ID, opts.SourceTaskIDs); err != nil {
@@ -346,11 +356,11 @@ func insertTaskLLMProfiles(tx *sql.Tx, taskID int64, profileIDs []int64) error {
 
 const taskCols = `id, COALESCE(name,''), category_id,
 COALESCE((SELECT category.name FROM task_categories category WHERE category.id=tasks.category_id),''),
-description, goal, exploration_id, status, paused, queued, queued_at, COALESCE(queue_mode,''), llm_profile_id, active_llm_profile_id, COALESCE(parent_ref,''), pinned_at, created_at, completed_at, COALESCE(timeout_seconds,0), COALESCE(plan_heartbeat_seconds,300), COALESCE(coverage_enabled,true), first_run_at, deadline_at, stop_requested_at`
+description, goal, exploration_id, status, paused, queued, queued_at, COALESCE(queue_mode,''), llm_profile_id, active_llm_profile_id, COALESCE(parent_ref,''), pinned_at, created_at, completed_at, COALESCE(timeout_seconds,0), COALESCE(plan_heartbeat_seconds,300), COALESCE(coverage_enabled,true), first_run_at, deadline_at, stop_requested_at, COALESCE(project_id,0)`
 
 func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	var t Task
-	if err := sc.Scan(&t.ID, &t.Name, &t.CategoryID, &t.CategoryName, &t.Description, &t.Goal, &t.ExplorationID, &t.Status, &t.Paused, &t.Queued, &t.QueuedAt, &t.QueueMode, &t.LLMProfileID, &t.ActiveLLMProfileID, &t.ParentRef, &t.PinnedAt, &t.CreatedAt, &t.CompletedAt, &t.TimeoutSeconds, &t.PlanHeartbeatSeconds, &t.CoverageEnabled, &t.FirstRunAt, &t.DeadlineAt, &t.StopRequestedAt); err != nil {
+	if err := sc.Scan(&t.ID, &t.Name, &t.CategoryID, &t.CategoryName, &t.Description, &t.Goal, &t.ExplorationID, &t.Status, &t.Paused, &t.Queued, &t.QueuedAt, &t.QueueMode, &t.LLMProfileID, &t.ActiveLLMProfileID, &t.ParentRef, &t.PinnedAt, &t.CreatedAt, &t.CompletedAt, &t.TimeoutSeconds, &t.PlanHeartbeatSeconds, &t.CoverageEnabled, &t.FirstRunAt, &t.DeadlineAt, &t.StopRequestedAt, &t.ProjectID); err != nil {
 		return nil, err
 	}
 	t.Pinned = t.PinnedAt != nil

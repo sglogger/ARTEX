@@ -56,7 +56,7 @@ func (s *Server) pgListConversations(w http.ResponseWriter, r *http.Request) {
 	if pg == nil {
 		return
 	}
-	cs, err := pg.ListConversations()
+	cs, err := pg.ListConversationsForProject(requestProject(r))
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return
@@ -79,6 +79,7 @@ func (s *Server) pgCreateConversation(w http.ResponseWriter, r *http.Request) {
 		AgentKey     string `json:"agent_key"`
 		Title        string `json:"title"`
 		LLMProfileID *int64 `json:"llm_profile_id"`
+		ProjectID    int64  `json:"project_id"`
 	}
 	if !decodeConversationRequest(w, r, &req) {
 		return
@@ -115,7 +116,12 @@ func (s *Server) pgCreateConversation(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, fmt.Sprintf("title must be at most %d characters", maxConversationTitleRunes))
 		return
 	}
-	c, err := pg.CreateConversation(req.AgentKey, title, req.LLMProfileID)
+	projectID, err := s.createProject(r, req.ProjectID)
+	if err != nil {
+		projectHTTPError(w, err)
+		return
+	}
+	c, err := pg.CreateConversationInProject(projectID, req.AgentKey, title, req.LLMProfileID)
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return
@@ -841,7 +847,7 @@ func (s *Server) runTriggeredRun(item triggeredRun) {
 		c, err = pg.GetConversation(item.conversationID)
 		_, _ = pg.Exec(`UPDATE finding_case_review_runs SET state='running' WHERE conversation_id=$1`, item.conversationID)
 	} else {
-		c, err = pg.CreateConversation(item.agentKey, firstLine(item.title, 60), nil)
+		c, err = pg.CreateConversationInProject(pg.TaskProjectID(item.taskID), item.agentKey, firstLine(item.title, 60), nil)
 	}
 	if err != nil || c == nil {
 		if item.conversationID > 0 {
