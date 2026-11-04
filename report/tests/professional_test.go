@@ -22,6 +22,7 @@ func proFixture() ProInput {
 		Findings: []*db.DBFinding{
 			{ID: 1, TaskID: &t1, Name: "Outdated WordPress core", Severity: "high", Status: "confirmed", AssetIDs: []int64{9},
 				Summary: "WordPress 6.9.4 <script>alert(1)</script>", Report: "## Impact\n\nRemote code execution.\n\n<img src=x onerror=alert(2)>",
+				Notes:     "Client confirmed the **staging** host is internet-facing.\n\n<iframe src=x></iframe>",
 				CreatedAt: started},
 			{ID: 2, TaskID: &t2, Name: "Missing HSTS", Severity: "low", Status: "pending", Evidence: "curl -I https://api.example", CreatedAt: started},
 			{ID: 3, TaskID: &t1, Name: "SQL injection", Severity: "critical", Status: "confirmed", ExportMemberIDs: []int64{3, 4}, CreatedAt: started},
@@ -80,5 +81,18 @@ func TestProfessionalHTMLGermanAndEmpty(t *testing.T) {
 		if !strings.Contains(html, want) {
 			t.Errorf("German report misses %q", want)
 		}
+	}
+}
+
+func TestProfessionalHTMLIncludesNotes(t *testing.T) {
+	html, err := ProfessionalHTML(proFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(html, "<h4>Tester notes</h4>") || !strings.Contains(html, "Client confirmed the <strong>staging</strong> host") {
+		t.Error("tester notes missing or not rendered as Markdown")
+	}
+	if strings.Contains(html, "<iframe") {
+		t.Error("raw HTML from notes reached the report")
 	}
 }

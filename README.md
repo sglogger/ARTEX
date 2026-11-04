@@ -99,6 +99,8 @@ Asset data can be synced directly from [ScopeSentry](https://github.com/Autumn-2
 - Scope per task (description, goal, targets, period, status), methodology and severity rating definitions.
 - Findings overview and one detailed section per finding, including the reporter's write-up, affected assets and evidence.
 
+Before generating the report you can adjust each finding on its detail page: the **Detailed report** (e.g. recommendations) and your own **Notes** are both editable as Markdown. An edited report is not overwritten by the reporter agent; clear it to let the agent write it again. Notes appear in the report as "Tester notes".
+
 In the dialog you choose the tasks (findings checked on the findings page can be added), a minimum severity, which statuses to leave out (false positives, ignored and duplicates by default), whether duplicate findings are merged through the finding groups, and English or German. Cover details are remembered in the browser.
 
 The PDF is printed on the server by headless Chromium, which the Docker image ships with Playwright. Outside Docker, ARTEX looks for Playwright's Chromium, a system Chromium/Chrome, or the path in `ARTEX_CHROME`; without one, the dialog offers the HTML file, which prints to PDF from any browser. Finding texts are escaped and Markdown is rendered without raw HTML, and the page blocks all network requests, so content taken from a target cannot run in the renderer. API: `POST /api/reports/professional`.

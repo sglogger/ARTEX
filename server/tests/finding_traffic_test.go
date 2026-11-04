@@ -501,3 +501,42 @@ func TestUpdateFindingReportResolvesRecordID(t *testing.T) {
 		t.Errorf("unknown id must fail clearly: %s", result.Flatten())
 	}
 }
+
+// A report a person edited is locked against agent writes until it is cleared.
+func TestPersonEditedReportIsNotOverwritten(t *testing.T) {
+	s, f, _ := trafficEvidenceServer(t)
+	ctx := context.Background()
+	patch := func(body string) int {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("PATCH", fmt.Sprintf("/api/exploration/findings/%d", f.FindingID), strings.NewReader(body))
+		r.SetPathValue("id", fmt.Sprint(f.FindingID))
+		s.patchFinding(w, r)
+		return w.Code
+	}
+	agentWrite := func() string {
+		res, err := s.toolUpdateFindingReport().Call(ctx, json.RawMessage(fmt.Sprintf(`{"finding_id":%d,"report":"agent text"}`, f.NodeID)), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Flatten()
+	}
+	if code := patch(`{"report":"## Remediation\n\nPatch within 7 days (agreed with client)."}`); code != 200 {
+		t.Fatalf("save report: %d", code)
+	}
+	got, _ := s.m.pg.GetFinding(f.FindingID)
+	if got.ReportEditedAt == nil || got.ReportEvidenceVersion != got.EvidenceVersion {
+		t.Fatalf("person edit not recorded as current: %+v", got)
+	}
+	if out := agentWrite(); !strings.Contains(out, "edited by a person") {
+		t.Fatalf("agent write should be refused: %s", out)
+	}
+	if got, _ = s.m.pg.GetFinding(f.FindingID); !strings.Contains(got.Report, "agreed with client") {
+		t.Fatal("agent overwrote the person's report")
+	}
+	if code := patch(`{"report":""}`); code != 200 {
+		t.Fatalf("clear report: %d", code)
+	}
+	if out := agentWrite(); !strings.Contains(out, "report updated") {
+		t.Fatalf("after clearing, the reporter may write again: %s", out)
+	}
+}

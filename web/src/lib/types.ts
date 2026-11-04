@@ -545,6 +545,8 @@ export interface Finding {
   summary: string;
   evidence: string;
   report?: string; // detailed report (Markdown); only returned by the detail endpoint, empty in lists
+  notes?: string; // the tester's own notes (Markdown); detail endpoint only, never written by agents
+  report_edited_at?: string; // set when a person saved the detailed report; agents cannot overwrite it then
   intent_id?: string;
   param_id?: string;
   task_id?: string;

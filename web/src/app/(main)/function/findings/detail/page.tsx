@@ -9,9 +9,9 @@ import { ArrowLeftIcon, ArrowUpRightIcon, ShieldAlertIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { CopyButton } from "@/components/copy-button";
+import { EditableMarkdownCard } from "@/components/editable-markdown-card";
 import { FindingRetestPanel } from "@/components/finding-retest-panel";
 import { FindingTrafficPanel } from "@/components/finding-traffic-panel";
-import { Markdown } from "@/components/markdown";
 import { StatusBadge } from "@/components/status-badge";
 import { EvidenceAssessment } from "@/components/evidence-assessment";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -205,25 +205,64 @@ function FindingDetailInner() {
                 readOnly={finding.inherited}
                 onChanged={load}
               />
-              {/* Below evidence: detailed report (Markdown rendered) */}
-              <Card>
-                <CardHeader className="flex-row items-center justify-between">
-                  <CardTitle className="text-sm">Detailed report</CardTitle>
-                  {finding.report && <CopyButton text={finding.report} successMessage="Detailed report copied" />}
-                </CardHeader>
-                <CardContent>
-                  {finding.report_stale ? (
-                    <Alert>
-                      <AlertDescription>Traffic evidence changed; the detailed report needs updating.</AlertDescription>
-                    </Alert>
-                  ) : null}
-                  {finding.report ? (
-                    <Markdown text={finding.report} />
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No detailed report yet.</p>
-                  )}
-                </CardContent>
-              </Card>
+              {/* Below evidence: detailed report (Markdown), editable; a person's edit locks it against agent rewrites */}
+              <EditableMarkdownCard
+                key={`report:${id}`}
+                title="Detailed report"
+                value={finding.report}
+                emptyText="No detailed report yet."
+                addLabel="Write report"
+                placeholder="## Overview … ## Impact … ## Reproduction Steps … ## Remediation …"
+                readOnly={finding.inherited}
+                actions={
+                  finding.report ? <CopyButton text={finding.report} successMessage="Detailed report copied" /> : null
+                }
+                banner={
+                  <>
+                    {finding.report_stale ? (
+                      <Alert className="mb-3">
+                        <AlertDescription>
+                          Traffic evidence changed; the detailed report needs updating.
+                        </AlertDescription>
+                      </Alert>
+                    ) : null}
+                    {finding.report_edited_at ? (
+                      <p className="text-muted-foreground mb-3 text-xs">
+                        Edited manually on {new Date(finding.report_edited_at).toLocaleString()}; the reporter agent
+                        does not overwrite it. Clear the report to let the agent write it again.
+                      </p>
+                    ) : null}
+                  </>
+                }
+                hint="Saving locks the report against the reporter agent; an empty report lifts the lock."
+                onSave={async (report) => {
+                  const updated = await api.updateFinding(id, { report });
+                  setFinding((f) =>
+                    f
+                      ? {
+                          ...f,
+                          report: updated.report,
+                          report_edited_at: updated.report_edited_at,
+                          report_stale: updated.report_stale,
+                        }
+                      : f,
+                  );
+                }}
+              />
+              <EditableMarkdownCard
+                key={`notes:${id}`}
+                title="Notes"
+                value={finding.notes}
+                emptyText="No notes yet."
+                addLabel="Add notes"
+                placeholder="Context from the client, retest results, remediation agreements …"
+                readOnly={finding.inherited}
+                hint="Your own notes; agents never change them. Included in exports and the professional report."
+                onSave={async (notes) => {
+                  const updated = await api.updateFinding(id, { notes });
+                  setFinding((f) => (f ? { ...f, notes: updated.notes } : f));
+                }}
+              />
             </div>
 
             {/* Right column: status panel */}

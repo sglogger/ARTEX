@@ -73,6 +73,7 @@
   .finding-head h3 { margin: 0; flex: 1; }
   .finding-head .ref { color: var(--muted); font-weight: 600; font-size: 11pt; }
   .meta-table th { width: 32mm; }
+  .notes { border-left: 3px solid var(--accent); background: #f8fafc; padding: 2px 12px; }
   .note { border-left: 3px solid var(--medium); background: #fffbeb; padding: 4px 10px; font-size: 9pt; }
 </style>
 </head>
@@ -194,6 +195,7 @@
     {{if .NoReport}}<p class="note">{{$.L.no_report}}</p>{{end}}
     {{if .Summary}}<h4>{{$.L.summary}}</h4><p>{{.Summary}}</p>{{end}}
     {{if .Report}}{{.Report}}{{end}}
+    {{if .Notes}}<h4>{{$.L.notes}}</h4><div class="notes">{{.Notes}}</div>{{end}}
     {{if .Evidence}}<h4>{{$.L.evidence}}</h4><pre>{{.Evidence}}</pre>{{end}}
   </article>
   {{end}}

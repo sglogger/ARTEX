@@ -1118,6 +1118,10 @@ CREATE TABLE IF NOT EXISTS findings (
 ALTER TABLE findings ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending';
 ALTER TABLE findings ADD COLUMN IF NOT EXISTS name   TEXT NOT NULL DEFAULT '';
 ALTER TABLE findings ADD COLUMN IF NOT EXISTS report TEXT NOT NULL DEFAULT '';
+-- notes: the tester's own Markdown notes; agents never write them, so the reporter cannot overwrite them.
+ALTER TABLE findings ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '';
+-- report_edited_at: set when a person saved the detailed report; agents must not overwrite it then.
+ALTER TABLE findings ADD COLUMN IF NOT EXISTS report_edited_at TIMESTAMPTZ;
 ALTER TABLE findings ADD COLUMN IF NOT EXISTS evidence_audit JSONB NOT NULL DEFAULT '[]';
 CREATE INDEX IF NOT EXISTS idx_findings_task ON findings(task_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_findings_time ON findings(created_at DESC);

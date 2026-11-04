@@ -86,6 +86,7 @@ func (s *Server) consolidateFindingCaseExport(fs []*db.DBFinding, plan *findingC
 			assets := map[int64]bool{}
 			var refs []string
 			var evidence strings.Builder
+			var notes []string
 			for _, member := range fs {
 				if plan.membership[member.ID] != cid {
 					continue
@@ -98,6 +99,9 @@ func (s *Server) consolidateFindingCaseExport(fs []*db.DBFinding, plan *findingC
 					}
 				}
 				refs = append(refs, fmt.Sprintf("#%d [%s] %s", member.ID, member.Severity, member.Name))
+				if n := strings.TrimSpace(member.Notes); n != "" {
+					notes = append(notes, fmt.Sprintf("**Original finding #%d:**\n\n%s", member.ID, n))
+				}
 				fmt.Fprintf(&evidence, "Original report entry #%d: %s\n%s\n\n", member.ID, member.Summary, member.Evidence)
 				if member.Report != "" {
 					fmt.Fprintf(&evidence, "Original report #%d:\n%s\n\n", member.ID, member.Report)
@@ -107,6 +111,8 @@ func (s *Server) consolidateFindingCaseExport(fs []*db.DBFinding, plan *findingC
 					composite.TrafficBindings = append(composite.TrafficBindings, b)
 				}
 			}
+			// The tester's notes of every merged original stay with the merged finding.
+			composite.Notes = strings.Join(notes, "\n\n")
 			composite.Summary = fmt.Sprintf("Finding folder #%d; original records: %s. Unified rating basis: %s", cid, strings.Join(refs, "; "), c.SeverityReason)
 			composite.TrafficCount = len(composite.TrafficBindings)
 			if stale || c.Report == "" {

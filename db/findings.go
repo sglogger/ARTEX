@@ -35,7 +35,9 @@ type DBFinding struct {
 	Worker          string
 	AssetIDs        []int64
 	Status          string
-	Report          string // detailed report (Markdown); only filled by GetFinding, not by list queries
+	Report          string     // detailed report (Markdown); only filled by GetFinding, not by list queries
+	Notes           string     // the tester's own notes (Markdown); filled by GetFinding and ListFindingsForExport
+	ReportEditedAt  *time.Time // when a person last saved the detailed report (agents may not overwrite it); GetFinding only
 	CreatedAt       time.Time
 	TaskDescription string // populated via LEFT JOIN on tasks
 }
@@ -475,7 +477,7 @@ RETURNING id, created_at`, s.expID, audit.NodeID, utf8Clean(audit.Worker), utf8C
 // then by time descending, matching the grouping order of "export summary report".
 func (d *DB) ListFindingsForExport(f FindingFilter, ids []int64) ([]*DBFinding, error) {
 	const order = `ORDER BY CASE f.severity WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END DESC, f.created_at DESC`
-	cols := findingSelectCols + `, COALESCE(f.report, '')`
+	cols := findingSelectCols + `, COALESCE(f.report, ''), COALESCE(f.notes, '')`
 
 	var q string
 	var args []any
@@ -515,7 +517,7 @@ func (d *DB) ListFindingsForExport(f FindingFilter, ids []int64) ([]*DBFinding, 
 		var aidsJSON string
 		if err := rows.Scan(&f.ID, &f.TaskID, &f.NodeID, &f.VulnClass, &f.Name, &f.Severity,
 			&f.Summary, &f.Evidence, &f.Worker, &aidsJSON, &f.Status, &f.CreatedAt,
-			&f.TaskDescription, &f.EvidenceVersion, &f.ReportEvidenceVersion, &f.TrafficCount, &f.EvidenceAssessment, &f.Report); err != nil {
+			&f.TaskDescription, &f.EvidenceVersion, &f.ReportEvidenceVersion, &f.TrafficCount, &f.EvidenceAssessment, &f.Report, &f.Notes); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal([]byte(aidsJSON), &f.AssetIDs)
@@ -639,13 +641,13 @@ func (d *DB) FindingStats() (*FindingStats, error) {
 func (d *DB) GetFinding(id int64) (*DBFinding, error) {
 	f := &DBFinding{}
 	var aidsJSON string
-	err := d.QueryRow(`SELECT `+findingSelectCols+`, COALESCE(f.report, '')
+	err := d.QueryRow(`SELECT `+findingSelectCols+`, COALESCE(f.report, ''), COALESCE(f.notes, ''), f.report_edited_at
 		FROM findings f
 		LEFT JOIN tasks t ON f.task_id = t.id
 		WHERE f.id = $1`, id).Scan(
 		&f.ID, &f.TaskID, &f.NodeID, &f.VulnClass, &f.Name, &f.Severity,
 		&f.Summary, &f.Evidence, &f.Worker, &aidsJSON, &f.Status, &f.CreatedAt,
-		&f.TaskDescription, &f.EvidenceVersion, &f.ReportEvidenceVersion, &f.TrafficCount, &f.EvidenceAssessment, &f.Report)
+		&f.TaskDescription, &f.EvidenceVersion, &f.ReportEvidenceVersion, &f.TrafficCount, &f.EvidenceAssessment, &f.Report, &f.Notes, &f.ReportEditedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -742,6 +744,15 @@ func (d *DB) setFindingCol(id int64, col, jsonKey, val string) (int64, error) {
 // rows affected (0 when no finding has that id).
 func (d *DB) SetFindingSeverity(id int64, severity string) (int64, error) {
 	return d.setFindingCol(id, "severity", "severity", severity)
+}
+
+// SetFindingNotes replaces the tester's notes of one finding. Returns rows affected.
+func (d *DB) SetFindingNotes(id int64, notes string) (int64, error) {
+	res, err := d.Exec(`UPDATE findings SET notes=$2 WHERE id=$1`, id, notes)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 // SetFindingName updates one finding's name (+ node payload sync). Empty name is

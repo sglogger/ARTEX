@@ -4,6 +4,13 @@ Notable changes to this project are recorded in this file. The format follows [K
 
 ## [Unreleased]
 
+### Added
+
+- Findings can be edited by hand on the finding detail page, with a Markdown editor and preview:
+  - **Detailed report:** adjust the reporter's write-up, e.g. recommendations, or write one yourself. A saved edit counts as current for the finding's evidence and is locked: `update_finding_report` refuses to overwrite it and tells the agent so. Clearing the report lifts the lock. `report_edited_at` on the finding shows when it was edited.
+  - **Notes:** your own Markdown notes per finding, which agents never change. Merged findings keep the notes of every original.
+  - Both appear in the professional report ("Tester notes") and in the Markdown exports. API: `PATCH /api/exploration/findings/{id}` with `report` and `notes`.
+
 ## [0.6.3] - 2026-11-04
 
 No upgrade steps. This is the first published release of the 0.6 line: the release workflow failed for 0.6.0 to 0.6.2, so their changes (vulnerability intelligence and Researcher agent in 0.6.0, the professional PDF report in 0.6.1, kept detailed finding reports in 0.6.2; see below) ship with this release.

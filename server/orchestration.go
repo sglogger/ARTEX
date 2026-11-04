@@ -476,6 +476,9 @@ func (s *Server) toolUpdateFindingReport() actool.CoreTool {
 				}
 			}
 			n, err := s.m.pg.SetFindingReportVersionByNodeID(ctx, nodeID, a.Report, a.EvidenceVersion)
+			if errors.Is(err, db.ErrReportEditedByPerson) {
+				return actool.Errorf(fmt.Sprintf("finding %d: the detailed report was edited by a person and is not overwritten by agents; nothing was saved. Keep the existing report and mention anything you would add in your final answer.", nodeID)), nil
+			}
 			if err != nil {
 				return actool.Errorf(err.Error()), nil
 			}

@@ -764,7 +764,7 @@ export const api = {
   // Save a finding's name/class/severity at once (for inline editing in the findings list); only fields present are sent.
   updateFinding: (
     id: string,
-    fields: { name?: string; vulnclass?: string; severity?: Severity; status?: FindingStatus },
+    fields: { name?: string; vulnclass?: string; severity?: Severity; status?: FindingStatus; notes?: string; report?: string },
   ) => patch<Finding>(`/exploration/findings/${id}`, fields),
   // Delete a finding: removes the findings row + its source exploration node (gone from the findings list, task findings tab and exploration graph).
   deleteFinding: (id: string) => del<{ deleted: boolean; id: number }>(`/exploration/findings/${id}`),

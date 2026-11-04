@@ -423,6 +423,28 @@ func (d *DB) FindingIDByNodeID(nodeID int64) (id int64, err error) {
 	return
 }
 
+// SetFindingReportByPerson saves a report a person wrote or edited. It counts as
+// current for the finding's evidence and locks the report against agent writes;
+// an empty report clears it and lifts the lock so the reporter can write again.
+func (d *DB) SetFindingReportByPerson(ctx context.Context, id int64, report string) (n int64, err error) {
+	err = d.WithEvidenceTx(ctx, func(tx *sql.Tx) error {
+		if err := LockFindingEvidenceTx(tx, id, nil); err != nil {
+			return err
+		}
+		res, err := tx.Exec(`UPDATE findings SET report=$2, report_evidence_version=evidence_version,
+			report_edited_at=CASE WHEN btrim($2)='' THEN NULL ELSE now() END WHERE id=$1`, id, report)
+		if err != nil {
+			return err
+		}
+		n, err = res.RowsAffected()
+		return err
+	})
+	if errors.Is(err, ErrFindingNotFound) {
+		return 0, nil
+	}
+	return
+}
+
 // NodeIDByFindingID returns the exploration node of a standalone finding record
 // (0 when the record has no node).
 func (d *DB) NodeIDByFindingID(findingID int64) (nodeID int64, err error) {
@@ -465,14 +487,21 @@ func (s *ExplorationStore) PopulateFindingTrafficIDs(nodes []*Node) error {
 	return rows.Err()
 }
 
+// ErrReportEditedByPerson rejects an agent write over a report a person edited.
+var ErrReportEditedByPerson = errors.New("the detailed report was edited by a person")
+
 func (d *DB) SetFindingReportVersionByNodeID(ctx context.Context, nodeID int64, report string, version *int64) (n int64, err error) {
 	err = d.WithEvidenceTx(ctx, func(tx *sql.Tx) error {
 		var id int64
-		if err := tx.QueryRow(`SELECT id FROM findings WHERE node_id=$1`, nodeID).Scan(&id); err != nil {
+		var edited sql.NullTime
+		if err := tx.QueryRow(`SELECT id, report_edited_at FROM findings WHERE node_id=$1`, nodeID).Scan(&id, &edited); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil
 			}
 			return err
+		}
+		if edited.Valid {
+			return ErrReportEditedByPerson
 		}
 		if err := LockFindingEvidenceTx(tx, id, version); err != nil {
 			return err

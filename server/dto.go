@@ -368,6 +368,9 @@ type FindingDTO struct {
 	Summary   string `json:"summary"`
 	Evidence  string `json:"evidence"`
 	Report    string `json:"report,omitempty"` // detailed report (Markdown); only returned by the detail endpoint, empty in lists
+	Notes     string `json:"notes,omitempty"`  // the tester's own notes (Markdown); detail endpoint only
+	// ReportEditedAt is set when a person saved the detailed report; agents cannot overwrite it then.
+	ReportEditedAt string `json:"report_edited_at,omitempty"`
 
 	IntentID        string            `json:"intent_id,omitempty"`
 	ParamID         string            `json:"param_id,omitempty"`
@@ -512,7 +515,11 @@ func findingFromDB(f *db.DBFinding, assets map[int64]*db.Asset) FindingDTO {
 		Summary:   f.Summary,
 		Evidence:  f.Evidence,
 		Report:    f.Report,
+		Notes:     f.Notes,
 		TS:        rfc3339(f.CreatedAt),
+	}
+	if f.ReportEditedAt != nil {
+		d.ReportEditedAt = rfc3339(*f.ReportEditedAt)
 	}
 	d.EvidenceAssessment = "needs_review"
 	if strings.TrimSpace(f.Evidence) == "" {

@@ -388,6 +388,9 @@ func (s *Server) findingLineage(w http.ResponseWriter, r *http.Request) {
 // The id is the standalone findings-table id (DTO finding_id). Severity edits are
 // mirrored onto the originating exploration node so the per-task view stays in
 // sync. Returns the updated finding DTO.
+// maxFindingNotes bounds the tester's notes per finding.
+const maxFindingNotes = 200_000
+
 func (s *Server) patchFinding(w http.ResponseWriter, r *http.Request) {
 	id := int64(atoiDefault(r.PathValue("id"), 0))
 	if id <= 0 {
@@ -399,14 +402,46 @@ func (s *Server) patchFinding(w http.ResponseWriter, r *http.Request) {
 		Severity  *string `json:"severity"`
 		Name      *string `json:"name"`
 		VulnClass *string `json:"vulnclass"`
+		Notes     *string `json:"notes"`  // the tester's Markdown notes; "" clears them
+		Report    *string `json:"report"` // detailed report edited by a person; "" clears it and lets the reporter write again
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, 400, "bad json: "+err.Error())
 		return
 	}
-	if body.Status == nil && body.Severity == nil && body.Name == nil && body.VulnClass == nil {
-		writeErr(w, 400, "nothing to update: provide status/severity/name/vulnclass")
+	if body.Status == nil && body.Severity == nil && body.Name == nil && body.VulnClass == nil && body.Notes == nil && body.Report == nil {
+		writeErr(w, 400, "nothing to update: provide status/severity/name/vulnclass/notes/report")
 		return
+	}
+	if body.Report != nil {
+		if len(*body.Report) > maxFindingNotes {
+			writeErr(w, 400, fmt.Sprintf("the report is limited to %d bytes", maxFindingNotes))
+			return
+		}
+		n, err := s.m.pg.SetFindingReportByPerson(r.Context(), id, *body.Report)
+		if err != nil {
+			writeErr(w, 500, err.Error())
+			return
+		}
+		if n == 0 {
+			writeErr(w, 404, "finding not found")
+			return
+		}
+	}
+	if body.Notes != nil {
+		if len(*body.Notes) > maxFindingNotes {
+			writeErr(w, 400, fmt.Sprintf("notes are limited to %d bytes", maxFindingNotes))
+			return
+		}
+		n, err := s.m.pg.SetFindingNotes(id, *body.Notes)
+		if err != nil {
+			writeErr(w, 500, err.Error())
+			return
+		}
+		if n == 0 {
+			writeErr(w, 404, "finding not found")
+			return
+		}
 	}
 	if body.Status != nil {
 		if !db.ValidFindingStatus(*body.Status) {

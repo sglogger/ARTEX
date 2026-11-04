@@ -35,7 +35,11 @@ func professionalReportServer(t *testing.T) (*Server, *db.Task, *db.Task) {
 		_ = pg.DeleteTask(a.ID)
 		_ = pg.DeleteTask(b.ID)
 	})
-	if _, err := pg.AddFinding(a.ID, 0, "Vulnerable component", "Outdated WordPress core", "high", "WordPress 6.9.4", "generator meta tag", "w1", nil); err != nil {
+	high, err := pg.AddFinding(a.ID, 0, "Vulnerable component", "Outdated WordPress core", "high", "WordPress 6.9.4", "generator meta tag", "w1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pg.SetFindingNotes(high, "Agreed with the client to patch **this week**."); err != nil {
 		t.Fatal(err)
 	}
 	fp, err := pg.AddFinding(a.ID, 0, "XSS", "Reflected XSS that was a false alarm", "medium", "", "", "w1", nil)
@@ -70,7 +74,7 @@ func TestProfessionalReportCombinesTasks(t *testing.T) {
 		t.Errorf("file name %q", d)
 	}
 	html := w.Body.String()
-	for _, want := range []string{"Outdated WordPress core", "Missing HSTS header", fmt.Sprintf("Task #%d", a.ID), fmt.Sprintf("Task #%d", b.ID), "Example AG", "Die Prüfung ergab 2 Findings"} {
+	for _, want := range []string{"Agreed with the client to patch <strong>this week</strong>.", "Anmerkungen des Testers", "Outdated WordPress core", "Missing HSTS header", fmt.Sprintf("Task #%d", a.ID), fmt.Sprintf("Task #%d", b.ID), "Example AG", "Die Prüfung ergab 2 Findings"} {
 		if !strings.Contains(html, want) {
 			t.Errorf("report misses %q", want)
 		}
@@ -108,5 +112,37 @@ func TestRenderPDFWithChromium(t *testing.T) {
 	}
 	if !strings.HasPrefix(string(pdf), "%PDF-") || len(pdf) < 1000 {
 		t.Fatalf("not a PDF: %d bytes", len(pdf))
+	}
+}
+
+func TestPatchFindingNotes(t *testing.T) {
+	s, a, _ := professionalReportServer(t)
+	list, err := s.m.pg.ListFindingsForExport(db.FindingFilter{TaskID: fmt.Sprint(a.ID)}, nil)
+	if err != nil || len(list) == 0 {
+		t.Fatal(err)
+	}
+	id := list[0].ID
+	patch := func(body string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("PATCH", fmt.Sprintf("/api/exploration/findings/%d", id), strings.NewReader(body))
+		r.SetPathValue("id", fmt.Sprint(id))
+		s.patchFinding(w, r)
+		return w
+	}
+	if w := patch(`{"notes":"## Retest\n\nStill open."}`); w.Code != 200 || !strings.Contains(w.Body.String(), "Still open.") {
+		t.Fatalf("save notes: %d %s", w.Code, w.Body.String())
+	}
+	f, _ := s.m.pg.GetFinding(id)
+	if f.Notes != "## Retest\n\nStill open." {
+		t.Fatalf("notes not stored: %q", f.Notes)
+	}
+	if w := patch(`{"notes":""}`); w.Code != 200 {
+		t.Fatalf("clear notes: %d", w.Code)
+	}
+	if f, _ = s.m.pg.GetFinding(id); f.Notes != "" {
+		t.Errorf("notes not cleared: %q", f.Notes)
+	}
+	if w := patch(fmt.Sprintf(`{"notes":%q}`, strings.Repeat("x", maxFindingNotes+1))); w.Code != 400 {
+		t.Errorf("oversized notes accepted: %d", w.Code)
 	}
 }
