@@ -4,6 +4,13 @@ Notable changes to this project are recorded in this file. The format follows [K
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed a planner going in circles on a finished measurement (observed: "Ping 1.1.1.1 and measure the RTT" with the ping output already saved as a fact). Three causes:
+  - The goal review (initial verdict and confirmation) had 60 seconds for both calls together, too little for a local model that also serves the planner and reporter. It now has 3 minutes; the goal contract classification uses the same limit.
+  - The review asked for at most 2048 output tokens. Models that reason although thinking is disabled (e.g. via Ollama) used them up and returned no answer, reported as `EOF`. The limit is now 8192 tokens, and an empty answer is reported as such.
+  - The error texts sent the planner the wrong way. A failed review now says that it is not a verdict and that `prove_goal` should be called again with the same evidence. A finding without saved evidence now points to the confirmed fact that records the observation. `report_finding` states that measurements and plain observations are facts, not findings, so a ping result no longer becomes an "Information Disclosure" finding that starts the reporter.
+
 ## [0.5.0] - 2026-11-04
 
 First release of this fork ([sglogger/ARTEX](https://github.com/sglogger/ARTEX)), based on v0.4.3 of [sharenjun/ARTEX-main](https://github.com/sharenjun/ARTEX-main).

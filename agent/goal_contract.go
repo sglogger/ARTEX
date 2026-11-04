@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/Autumn-27/artex/db"
 	"github.com/Autumn-27/norma/llm"
@@ -48,7 +47,7 @@ func NewGoalContractSettler(prov llm.Provider) GoalContractSettler {
 		if err != nil {
 			return out, err
 		}
-		ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+		ctx, cancel := context.WithTimeout(ctx, goalReviewTimeout)
 		defer cancel()
 		if err := reviewGoalProof(ctx, prov, raw, goalContractInstruction, &out); err != nil {
 			return GoalContract{}, err

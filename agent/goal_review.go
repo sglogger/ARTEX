@@ -48,7 +48,7 @@ func NewGoalProofReviewer(prov llm.Provider) GoalProofReviewer {
 		if prov == nil {
 			return verdict, fmt.Errorf("goal evidence review model unavailable")
 		}
-		ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+		ctx, cancel := context.WithTimeout(ctx, goalReviewTimeout)
 		defer cancel()
 		raw, err := json.Marshal(struct {
 			Snapshot db.GoalProofSnapshot `json:"snapshot"`
@@ -102,6 +102,10 @@ Output only one JSON object: {"consistent":true or false,"supported":true or fal
 	}
 }
 
+// goalReviewTimeout bounds the initial review and its confirmation together. Local
+// models behind a shared queue often need well over a minute for both calls.
+const goalReviewTimeout = 3 * time.Minute
+
 func validGoalProofVerdict(verdict GoalProofVerdict) bool {
 	return verdict.Supported != nil && strings.TrimSpace(verdict.Reason) != "" && (verdict.GoalType == "outcome" || verdict.GoalType == "inspection")
 }
@@ -111,7 +115,9 @@ func reviewGoalProof(ctx context.Context, prov llm.Provider, raw []byte, instruc
 		return fmt.Errorf("goal evidence exceeds the scope of a single review; save precise evidence and retry; it must not be truncated and then stamped")
 	}
 	message, _, _, err := prov.Complete(ctx, llm.CompletionRequest{
-		System: []string{instruction}, Messages: []llm.Message{llm.UserText(string(raw))}, Thinking: "disabled", MaxTokens: 2048,
+		// Some OpenAI-compatible servers (e.g. Ollama) ignore the thinking switch; the
+		// cap must leave room for the JSON answer after the model's reasoning.
+		System: []string{instruction}, Messages: []llm.Message{llm.UserText(string(raw))}, Thinking: "disabled", MaxTokens: 8192,
 	})
 	if err != nil {
 		return err
@@ -123,6 +129,9 @@ func reviewGoalProof(ctx context.Context, prov llm.Provider, raw []byte, instruc
 		return fmt.Errorf("goal review returned an unpermitted tool call")
 	}
 	text := strings.TrimSpace(message.Text())
+	if text == "" {
+		return fmt.Errorf("goal review model returned no answer text (only reasoning or nothing)")
+	}
 	if strings.HasPrefix(text, "```json\n") && strings.HasSuffix(text, "```") {
 		text = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(text, "```json\n"), "```"))
 	}

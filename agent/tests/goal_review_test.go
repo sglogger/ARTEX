@@ -115,7 +115,7 @@ func TestGoalReviewConfirmationSharesDeadline(t *testing.T) {
 			}
 			if calls == 1 {
 				initialDeadline = deadline
-				time.Sleep(50 * time.Second)
+				time.Sleep(goalReviewTimeout - 10*time.Second)
 				completionReviewEvents(yield, llm.StreamEvent{Type: llm.SETextDelta, Text: `{"supported":true,"goal_type":"outcome","reason":"saved result"}`})
 				return
 			}
@@ -126,7 +126,7 @@ func TestGoalReviewConfirmationSharesDeadline(t *testing.T) {
 			yield(llm.StreamEvent{}, ctx.Err())
 		}}
 		verdict, err := NewGoalProofReviewer(provider)(t.Context(), db.GoalProofSnapshot{}, "claim")
-		if !errors.Is(err, context.DeadlineExceeded) || calls != 2 || time.Since(started) != 60*time.Second || verdict.Supported != nil {
+		if !errors.Is(err, context.DeadlineExceeded) || calls != 2 || time.Since(started) != goalReviewTimeout || verdict.Supported != nil {
 			t.Fatalf("late confirmation accepted: %+v err=%v calls=%d elapsed=%v", verdict, err, calls, time.Since(started))
 		}
 	})

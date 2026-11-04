@@ -1239,7 +1239,7 @@ func (t *ToolSet) proveGoal() actool.CoreTool {
 			verdict, err := t.goalReviewer(ctx, snapshot, a.Reason)
 			if err != nil {
 				ledger.Fail(snapshot, "review failed: "+err.Error(), false)
-				return actool.Errorf("goal evidence review failed; verdict not changed: " + err.Error()), nil
+				return actool.Errorf(fmt.Sprintf("goal evidence review did not finish (%v). This is not a verdict on the evidence: the goal stays open and the evidence is unchanged. Call prove_goal again with the same goal_id and evidence_id; do not report findings or start new work only to re-prove it.", err)), nil
 			}
 			if verdict.Supported == nil || strings.TrimSpace(verdict.Reason) == "" || (verdict.GoalType != "outcome" && verdict.GoalType != "inspection") {
 				ledger.Fail(snapshot, "review returned no valid verdict", false)
@@ -1314,7 +1314,7 @@ func (t *ToolSet) goalMet() actool.CoreTool {
 // --- worker write tools ---
 
 func (t *ToolSet) addFinding() actool.CoreTool {
-	return writeTool("report_finding", "Record a confirmed finding, using evidence to supply verifiable proof such as command output and logs. In a task context pass the current intent_id. The returned finding_id is the standalone finding record ID; finding_node_id is the exploration node ID (the first line keeps that node number).", obj(map[string]any{
+	return writeTool("report_finding", "Record a confirmed finding: a security weakness or vulnerability, using evidence to supply verifiable proof such as command output and logs. A measurement, reachability check or other plain observation (ping RTT, open port, banner) is not a finding; it belongs in a fact (record_fact), and goals are proven with that fact. In a task context pass the current intent_id. The returned finding_id is the standalone finding record ID; finding_node_id is the exploration node ID (the first line keeps that node number).", obj(map[string]any{
 		"vulnclass": str("vulnerability class"), "name": str("finding name"), "severity": str("critical|high|medium|low"), "summary": str("finding summary"),
 		"intent_id": idp("intent id of the current task"), "asset_ids": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "affected asset ids"},
 		"evidence":         str("evidence/PoC text"),

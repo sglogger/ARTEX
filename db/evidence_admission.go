@@ -55,7 +55,7 @@ func ValidateGoalEvidence(snapshot GoalProofSnapshot) error {
 	}
 	for _, f := range findings {
 		if strings.TrimSpace(f.Evidence) == "" {
-			return fmt.Errorf("the finding lacks verifiable evidence; keep the lead and add evidence, it cannot count as a verified outcome")
+			return fmt.Errorf("the finding has no saved evidence, so it cannot prove the goal. If a confirmed fact already records the observation, call prove_goal with that fact's id as evidence_id; otherwise add evidence to the finding first")
 		}
 		if f.Status == FindingFalsePositive || f.Status == FindingIgnored || f.Status == FindingDuplicate {
 			return fmt.Errorf("the finding's current triage status does not support an independent outcome")
