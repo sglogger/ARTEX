@@ -3,24 +3,38 @@
 # ARTEX
 
 Autonomous AI penetration testing system (Go backend + Next.js frontend)
-# Issues are welcome
-Maintained when time allows; not the original author. Some updates may turn out to be regressions; please report them if you need changes.
 
-🌐 **Live demo**: [https://artex-demo.vercel.app/](https://artex-demo.vercel.app/)
+**This is a fork.** ARTEX was created by [Autumn-27](https://github.com/Autumn-27). This repository is a fork of [sharenjun/ARTEX-main](https://github.com/sharenjun/ARTEX-main), which continued the original project. I am not the original author.
+
+Issues for this fork are welcome. Some updates may turn out to be regressions; please report them.
 
 </div>
 
 ---
 
-## v0.4.0 update
+## Fork history and what changed
 
-This release adds background sync history for ScopeSentry, per-item failure retries, recovery for large paginated imports, and raw JSON source tracking. Before a task completes, the remaining work is assessed, and workers save the results they already have during a time-boxed wrap-up phase. The sync and task pages show the corresponding progress, stop reasons, and unfinished items. It also fixes Windows evidence saving, Python tools, and skill path compatibility issues.
+| Stage | Repository | Contribution |
+| --- | --- | --- |
+| Original | [Autumn-27](https://github.com/Autumn-27) (the original ARTEX repository is no longer public) | ARTEX up to v0.3.15 and the [norma](https://github.com/Autumn-27/norma) agent SDK, vendored under [`norma/`](norma/) |
+| Upstream of this fork | [sharenjun/ARTEX-main](https://github.com/sharenjun/ARTEX-main) | Continued from v0.3.15 to v0.4.3: ScopeSentry background sync, finding-case reports, finding retest, completion checks and recovery fixes ([v0.4.0 Release](https://github.com/sharenjun/ARTEX-main/releases/tag/v0.4.0)) |
+| This fork | [sglogger/ARTEX](https://github.com/sglogger/ARTEX) | Everything below, listed in detail under [Unreleased] in the [CHANGELOG](CHANGELOG.md) |
 
-For the full list of feature changes, code organization changes, verification scope, and upgrade advice, see the [v0.4.0 Release](https://github.com/sharenjun/ARTEX-main/releases/tag/v0.4.0); for earlier versions, see the [CHANGELOG](CHANGELOG.md).
+**New in this fork:**
+
+- Chinese UI texts, prompts and documentation translated to English.
+- Graceful task stop and a Docker setup fix.
+- Fix for tasks looping for hours while trying to prove a goal (goal contracts are settled by a separate model call, identical proof retries are answered without a new review, and the task pauses for review after five rejected attempts).
+- Version pill in the top bar that opens the embedded changelog.
+- Update check and one-click update use the releases of this repository.
+
+**Adopted from other ARTEX derivatives** (ported by hand and adapted to this code base, not merged):
+
+- [jiwoochris/artex-global](https://github.com/jiwoochris/artex-global): resolving drifted tool names to the canonical tool; first-run setup token, session invalidation on password change, login throttling and CORS allowlist; report retry, live transcript while SSE is down and the medium-width task list layout; the defense and detection pack under [`detections/`](detections/).
+- [neouks/series](https://github.com/neouks/series): a paused task no longer spends its timeout.
+- [RuoJi6/ARTEX](https://github.com/RuoJi6/ARTEX): the model approval judge fails closed; the LLM rate limit counts every HTTP attempt, including retries; Go 1.26.10.
 
 ## Screenshots
-
-> For the full interactive experience, see the [live demo](https://artex-demo.vercel.app/).
 
 | Dashboard (overview / token usage / activity feed) | Task list |
 | :---: | :---: |
@@ -171,7 +185,7 @@ CGO_ENABLED=0 go build -tags embedui -o artex ./cmd/artex
 
 ```bash
 ./build.sh --release
-# output: dist/artex-0.3.3-*.zip
+# output: dist/artex-<version>-*.zip
 ```
 
 UPX self-extracting binaries can be incompatible with some Linux kernels, virtualization environments, or security policies, so UPX is off by default. Use `ARTEX_TARGETS` to customize targets; once you have confirmed the target environment is compatible, pass `--upx` explicitly to shrink the binary further:
@@ -185,7 +199,9 @@ ARTEX_TARGETS=linux/amd64,windows/amd64 ./build.sh --release
 
 ## Upgrading
 
-The running version is shown as a pill in the top bar; click it to read the changelog of exactly that build (embedded from [`CHANGELOG.md`](CHANGELOG.md)). Local builds show the release they are based on, e.g. `v0.4.3 · local`.
+The running version is shown as a pill in the top bar; click it to read the changelog of exactly that build (embedded from [`CHANGELOG.md`](CHANGELOG.md)). Local builds show the release they are based on, e.g. `v0.5.0 · local`.
+
+> **Upgrading to 0.5.0:** the port now binds to `127.0.0.1` by default. Set `ARTEX_BIND=0.0.0.0` in `.env` (Docker) or pass `-addr :8787` if ARTEX must stay reachable from other machines. Everyone has to log in once more after the upgrade. See the upgrade notes in the [CHANGELOG](CHANGELOG.md).
 
 > Upgrades only replace the program, never the data: the Postgres volume `pgdata`, `./data` (jwt.key / SQLite, etc.), and `./skills` are all kept. **Database migrations do not need to be run by hand** — every time `artex` starts it idempotently reruns `schema.sql` (including `ADD COLUMN` / `CREATE INDEX IF NOT EXISTS`), i.e. "restart to migrate". Backing up `./data` and the database before upgrading is still recommended.
 
@@ -546,17 +562,6 @@ As a result, attack chains still **advance steadily, without repetition or misor
 
 ---
 
-## Community
-
-Scan the QR code to follow the WeChat official account **SecSentry**, then send a private message in the account to join the group.
-
-<div align="center">
-
-<img src="screenshots/wx.png" alt="WeChat official account SecSentry" width="480" />
-
-</div>
-
----
 ## References
 
 https://github.com/oritera/Cairn
