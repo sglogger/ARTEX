@@ -4,6 +4,10 @@ Notable changes to this project are recorded in this file. The format follows [K
 
 ## [Unreleased]
 
+### Fixed
+
+- The release workflow no longer fails without Docker Hub credentials: when `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` are not set, the Docker image is skipped and the GitHub release with the five installation archives is still published. Releases 0.6.0 to 0.6.2 were never published because of this.
+
 ## [0.6.2] - 2026-11-04
 
 No upgrade steps. On first start the description of `update_finding_report` is refreshed once. Detailed reports that were lost before this release are not restored automatically; let the reporter write them again.

@@ -25,8 +25,22 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       stable: ${{ steps.version.outputs.stable }}
       prerelease: ${{ steps.version.outputs.prerelease }}
+      docker: ${{ steps.docker.outputs.enabled }}
     steps:
       - uses: actions/checkout@v7
+      # Forks without Docker Hub credentials still publish the GitHub release; only the image is skipped.
+      - name: Check Docker Hub credentials
+        id: docker
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::DOCKERHUB_USERNAME/DOCKERHUB_TOKEN are not set; the Docker image is skipped, the GitHub release is still published."
+          fi
       - name: Validate release tag
         id: version
         env:
@@ -143,6 +157,7 @@ jobs:
   # Build one manifest list containing both native Linux architectures.
   docker:
     needs: [binaries, prepare]
+    if: needs.prepare.outputs.docker == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -203,9 +218,12 @@ jobs:
             docker run --rm --platform "linux/$arch" --entrypoint /app/artex "$DOCKERHUB_IMAGE:$TAG" -h
           done
 
-  # Publish only after all five packages and the Docker manifest are verified.
+  # Publish only after all five packages and, when Docker Hub is configured, the Docker manifest are verified.
   release:
     needs: [binaries, docker, prepare]
+    if: >-
+      !cancelled() && needs.prepare.result == 'success' && needs.binaries.result == 'success'
+      && (needs.docker.result == 'success' || needs.docker.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: write
