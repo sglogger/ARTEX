@@ -121,7 +121,7 @@ The script detects / installs Docker, then lets you choose **① all Docker** or
 - **① All Docker**: enter a Postgres password (press Enter for a random one) → `.env` is written automatically → `docker compose up -d`.
 - **② Run locally**: choose a database (connect to an existing one / start one with Docker) → generate `config.json` → build a single binary with embedded frontend using `go` → start.
 
-Once installed, open **http://localhost:8787** (on first visit, `/setup` asks you to set the admin password).
+Once installed, open **http://localhost:8787**. On first visit, `/setup` asks for the **setup token** and the admin password. The token is printed only to the server log (`docker compose logs artex | grep "Setup token"`, or the console of `./start.sh`), so whoever merely reaches the port cannot claim the admin account. For headless setups, `ARTEX_SETUP_TOKEN` pins the token and `ARTEX_ADMIN_PASSWORD` initialises the password directly. The port listens on `127.0.0.1` by default; set `ARTEX_BIND=0.0.0.0` in `.env` (Docker) or pass `-addr :8787` to serve other hosts, ideally behind the HTTPS reverse proxy below. Changing the password logs out all other sessions.
 
 ### Option 2: Docker Compose (manual)
 
@@ -260,13 +260,22 @@ CGO_ENABLED=0 go build -tags embedui -o artex ./cmd/artex
 **LLM**: `export ANTHROPIC_API_KEY=sk-...` (or `OPENAI_API_KEY`), or fill it in on the "LLM configuration" page in the UI.
 Optional: `ARTEX_LLM_PROVIDER` / `ARTEX_LLM_MODEL` / `ARTEX_LLM_BASE_URL` / `ARTEX_LLM_PROXY`.
 
+**Access and first-run protection** (environment variables):
+
+| Variable | Purpose |
+| --- | --- |
+| `ARTEX_BIND` | Host address `docker-compose.yml` publishes port 8787 on (default `127.0.0.1`; `0.0.0.0` for other machines). Outside Docker use `-addr`. |
+| `ARTEX_SETUP_TOKEN` | Pins the first-run setup token instead of a random one printed to the log (this value is never logged). |
+| `ARTEX_ADMIN_PASSWORD` | Initialises the admin password at startup without `/setup` (8–72 bytes); ignored once a password exists. |
+| `ARTEX_CORS_ORIGINS` | Comma-separated browser origins allowed to call `/api` cross-origin (default: `next dev` on port 5173; `*` allows all). The embedded UI is same-origin and needs none. |
+
 **Concurrency**: the number of work agents per task is configured in "System settings" (default 3).
 
-**Common flags**: `./start.sh -addr :8787 -proxy :8788` (`-addr` for frontend+API, `-proxy` for the traffic recording proxy). The start script passes flags through to `artex` unchanged.
+**Common flags**: `./start.sh -addr :8787 -proxy :8788` (`-addr` for frontend+API, default `127.0.0.1:8787` = local only; `-proxy` for the traffic recording proxy). The start script passes flags through to `artex` unchanged.
 
 ### Reverse proxy deployment (HTTPS / only 443 exposed)
 
-The frontend and the API/SSE are all served from the same backend port (default `:8787`), and the live activity feed uses the **same origin** by default, so **`NEXT_PUBLIC_SSE_BASE` does not need to be set**; expose only 443 publicly and keep 8787 internal.
+The frontend and the API/SSE are all served from the same backend port (default `:8787`), and the live activity feed uses the **same origin** by default, so **`NEXT_PUBLIC_SSE_BASE` does not need to be set**; expose only 443 publicly and keep 8787 internal. Since the backend binds `127.0.0.1:8787` by default, a proxy on the same host can reach it unchanged; finish the initial `/setup` before making the instance public.
 
 SSE is a long-lived connection with continuous pushes, so the reverse proxy **must disable buffering**; otherwise the browser connects but never receives events (the activity feed keeps spinning). Nginx example:
 

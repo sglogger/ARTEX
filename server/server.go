@@ -5,6 +5,7 @@ import (
 	"log"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/Autumn-27/artex/agent"
 	"github.com/Autumn-27/artex/llmpool"
@@ -25,6 +26,17 @@ type Server struct {
 
 	skillDir string // root directory for skill subdirectories
 	jwtKey   []byte // HS256 signing key loaded from / generated into dataDir/jwt.key
+
+	// authMu guards the first-run setup token, the cached password hash (tokens
+	// are signed with a key derived from it — see auth.go signingKey) and the
+	// failed-attempt limiter. initMu serialises /api/auth/init check-then-set.
+	authMu         sync.Mutex
+	initMu         sync.Mutex
+	setupToken     string
+	passHash       string
+	passHashLoaded bool
+	passHashAt     time.Time
+	loginLimiter   *authLimiter
 
 	// concMu serializes concurrency-cap decisions (admission + reconcile) so a
 	// scheduler tick and an HTTP settings change / task creation can't both count
@@ -128,6 +140,9 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 		profChatAgents: map[int64]*agent.ChatAgent{},
 		provByProfile:  map[int64]*provEntry{}, llmHealth: newLLMHealthRegistry(m.pg),
 		taskAgents: map[string]*taskAgentBundle{}, archiveWake: make(chan struct{}, 1)}
+	// First-run protection: cache the password hash and, while none is set, issue
+	// the console setup token (or apply ARTEX_ADMIN_PASSWORD) before any request.
+	s.bootstrapAuth()
 	s.initSideQuestions()
 	if err := s.recoverSSSyncRuns(); err != nil {
 		log.Printf("[sync] recover interrupted runs: %v", err)

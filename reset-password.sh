@@ -233,3 +233,4 @@ fi
 
 unset ARTEX_RESET_NEWPASS
 echo "✓ ARTEX administrator password reset. Log in with user name ARTEX + the new password (no service restart needed)."
+echo "  Previously issued login sessions (tokens) are invalidated within a few seconds. If you are recovering from a taken-over or leaked account, also review custom tools, MCP, LLM and notification settings."

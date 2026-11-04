@@ -49,6 +49,8 @@ install_docker(){
   docker compose pull || true
   docker compose up -d
   ok "started → http://localhost:8787"
+  info "on first visit, enter the \"Setup token\" on /setup to create the admin password"
+  info "show the setup token: docker compose logs artex | grep 'Setup token'   (published on 127.0.0.1 by default; change with ARTEX_BIND in .env)"
   info "view logs: docker compose logs -f artex"
 }
 
@@ -106,7 +108,7 @@ JSON
   fi
   ok "build complete → ./artex"
 
-  info "starting… (Ctrl-C to quit)"
+  info "starting… (Ctrl-C to quit). Listens on 127.0.0.1:8787 by default; on first visit enter the [auth] setup token from the log below on /setup"
   ./artex
 }
 

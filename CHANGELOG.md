@@ -4,6 +4,21 @@ Notable changes to this project are recorded in this file. The format follows [K
 
 ## [Unreleased]
 
+### Security
+
+- Blocked a remote takeover of the admin account on first run. While no password is set, `POST /api/auth/init` used to accept anyone who reached the port first. It now requires a random setup token that is printed only to the server console (`[auth] ... Setup token: ...`) and is compared in constant time; `/setup` has a field for it. `ARTEX_SETUP_TOKEN` pins the token (never logged), `ARTEX_ADMIN_PASSWORD` initialises the password at startup without `/setup`.
+- Login tokens are now signed with a key derived from the jwt.key and the stored password hash. Every password change (settings dialog, `reset-password.sh`, direct DB edit) invalidates all earlier sessions within about two seconds, without a restart; the change-password response carries a fresh token so the current session continues. A failed hash read rejects tokens (fail closed).
+- Repeated failures on login, init and change-password are throttled per client address: after 5 failures a cooldown starts at 30 seconds and doubles up to 10 minutes (HTTP 429). The throttle key is the TCP peer, not the forgeable `X-Forwarded-For`; failures are written to the audit log. A wrong username now costs the same bcrypt comparison as a wrong password.
+- CORS no longer allows every origin. Only origins in `ARTEX_CORS_ORIGINS` (comma-separated, default: the `next dev` origins on port 5173; `*` restores the old behaviour) get CORS headers, so a web page opened in the operator's browser can no longer call the API.
+
+### Changed
+
+- The backend listens on `127.0.0.1:8787` by default (`-addr`), and `docker-compose.yml` publishes the UI/API port on `${ARTEX_BIND:-127.0.0.1}`. **To reach ARTEX from other machines, set `ARTEX_BIND=0.0.0.0` in `.env` (Docker) or pass `-addr :8787`.** Starting on a non-loopback address without a password logs a warning. The Docker image still binds `:8787` inside the container.
+
+### Fixed
+
+- Tool calls with a drifted name (`bash`, `web_fetch`, `TODO_WRITE` instead of `Bash`, `WebFetch`, `TodoWrite`) no longer fail as "unknown tool". The tool registry folds case and `_`/`-` separators when exactly one tool matches, and dispatch continues under the canonical name, so intercept rules, the guard audit, wrap-up tool denials and permission rules apply exactly as for a correctly spelled call. This mainly helps OpenAI-compatible and open-weight models.
+
 ## [0.4.3] - 2026-10-27
 
 ### Fixed

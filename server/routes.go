@@ -2,6 +2,8 @@ package server
 
 import (
 	"net/http"
+	"os"
+	"strings"
 )
 
 func (s *Server) Handler() http.Handler {
@@ -317,11 +319,47 @@ func (s *Server) Handler() http.Handler {
 	return root
 }
 
+// corsOriginsEnv lists the browser origins allowed to call /api cross-origin
+// (comma-separated, e.g. "https://ui.example.com"; "*" restores the old
+// allow-everything behaviour). The embedded UI is same-origin and needs none of
+// this; the default only covers `next dev` from dev.sh.
+const corsOriginsEnv = "ARTEX_CORS_ORIGINS"
+
+var defaultCORSOrigins = []string{"http://localhost:5173", "http://127.0.0.1:5173"}
+
+// corsAllowedOrigins builds the origin allowlist (lower-cased) from the env.
+func corsAllowedOrigins() map[string]bool {
+	list := defaultCORSOrigins
+	if v := strings.TrimSpace(os.Getenv(corsOriginsEnv)); v != "" {
+		list = strings.Split(v, ",")
+	}
+	out := map[string]bool{}
+	for _, o := range list {
+		if o = strings.ToLower(strings.TrimSpace(o)); o != "" {
+			out[o] = true
+		}
+	}
+	return out
+}
+
+// cors adds CORS headers only for allowlisted origins. With a blanket
+// "Access-Control-Allow-Origin: *", any web page the operator happened to visit
+// could POST to /api/auth/init on a not-yet-initialised instance (even one bound
+// to 127.0.0.1) and read the token from the response.
 func cors(next http.Handler) http.Handler {
+	return corsWith(corsAllowedOrigins(), next)
+}
+
+func corsWith(allowed map[string]bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if origin := r.Header.Get("Origin"); origin != "" {
+			w.Header().Add("Vary", "Origin")
+			if allowed["*"] || allowed[strings.ToLower(origin)] {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
+				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			}
+		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(204)
 			return

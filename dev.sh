@@ -11,7 +11,7 @@ cleanup() { kill 0 2>/dev/null || true; }
 trap cleanup EXIT INT TERM
 
 # Backend (plain go run, no embedded frontend); the number of concurrent work agents is configured in "System settings".
-go run ./cmd/artex -addr :8787 -proxy 127.0.0.1:8788 &
+go run ./cmd/artex -addr 127.0.0.1:8787 -proxy 127.0.0.1:8788 &
 
 # Frontend hot reload (Vite/Next dev server, /api reverse-proxied to :8787).
 ( cd web && npm run dev ) &
