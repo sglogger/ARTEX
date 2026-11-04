@@ -25,7 +25,9 @@ Issues for this fork are welcome. Some updates may turn out to be regressions; p
 - Chinese UI texts, prompts and documentation translated to English.
 - Graceful task stop and a Docker setup fix.
 - Fix for tasks looping for hours while trying to prove a goal (goal contracts are settled by a separate model call, identical proof retries are answered without a new review, and the task pauses for review after five rejected attempts).
+- Goal reviews that also work with slow local models (e.g. via Ollama): more time and output tokens for the review, and error texts that keep the planner from going in circles.
 - Version pill in the top bar that opens the embedded changelog.
+- Dependencies with known vulnerabilities updated (Next.js 16.4.5, `puppeteer-core` 25 for the `api-recon` skill, `klauspost/compress` 1.18.7).
 - Update check and one-click update use the releases of this repository.
 
 **Adopted from other ARTEX derivatives** (ported by hand and adapted to this code base, not merged):
@@ -199,9 +201,9 @@ ARTEX_TARGETS=linux/amd64,windows/amd64 ./build.sh --release
 
 ## Upgrading
 
-The running version is shown as a pill in the top bar; click it to read the changelog of exactly that build (embedded from [`CHANGELOG.md`](CHANGELOG.md)). Local builds show the release they are based on, e.g. `v0.5.0 · local`.
+The running version is shown as a pill in the top bar; click it to read the changelog of exactly that build (embedded from [`CHANGELOG.md`](CHANGELOG.md)). Local builds show the release they are based on, e.g. `v0.5.1 · local`.
 
-> **Upgrading to 0.5.0:** the port now binds to `127.0.0.1` by default. Set `ARTEX_BIND=0.0.0.0` in `.env` (Docker) or pass `-addr :8787` if ARTEX must stay reachable from other machines. Everyone has to log in once more after the upgrade. See the upgrade notes in the [CHANGELOG](CHANGELOG.md).
+> **Upgrading from 0.4.x to 0.5.x:** the port now binds to `127.0.0.1` by default. Set `ARTEX_BIND=0.0.0.0` in `.env` (Docker) or pass `-addr :8787` if ARTEX must stay reachable from other machines. Everyone has to log in once more after the upgrade. See the upgrade notes in the [CHANGELOG](CHANGELOG.md).
 
 > Upgrades only replace the program, never the data: the Postgres volume `pgdata`, `./data` (jwt.key / SQLite, etc.), and `./skills` are all kept. **Database migrations do not need to be run by hand** — every time `artex` starts it idempotently reruns `schema.sql` (including `ADD COLUMN` / `CREATE INDEX IF NOT EXISTS`), i.e. "restart to migrate". Backing up `./data` and the database before upgrading is still recommended.
 
