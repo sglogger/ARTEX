@@ -4,6 +4,11 @@ Notable changes to this project are recorded in this file. The format follows [K
 
 ## [Unreleased]
 
+### Fixed
+
+- Detailed finding reports were lost when the reporter passed the standalone finding id to `update_finding_report` instead of the node id: the tool answered `sql: no rows in result set`, and the reporter still reported success. A finding record id is now resolved to its node and saved, an id that is neither fails with a clear "nothing was saved", and the tool description says which id it expects (refreshed once on existing installations).
+- The professional report marks findings that have no detailed report yet instead of leaving the section out silently.
+
 ## [0.6.1] - 2026-11-04
 
 No upgrade steps. The PDF is printed by the Chromium already in the Docker image; installations outside Docker need Playwright's Chromium, a system Chrome/Chromium or `ARTEX_CHROME`, otherwise the report is offered as HTML.

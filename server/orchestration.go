@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -432,9 +434,9 @@ func (s *Server) toolGetTaskNodeDetail() actool.CoreTool {
 // task-agnostic, so this host tool needs no task_id / exploration store.
 func (s *Server) toolUpdateFindingReport() actool.CoreTool {
 	return wrTool("update_finding_report",
-		"Write/update the [detailed report] of a recorded finding (full Markdown, overwrites the old content entirely). finding_id is the id returned by report_finding (the number in \"finding recorded: <id>\"). A report should cover: overview, impact, reproduction steps, evidence/PoC, remediation.",
+		"Write/update the [detailed report] of a recorded finding (full Markdown, overwrites the old content entirely). finding_id is the exploration node id that report_finding returned (the number in \"finding recorded: <id>\"); a standalone finding record id is resolved to its node when it is not a node id itself. A report should cover: overview, impact, reproduction steps, evidence/PoC, remediation. Check the result: only \"report updated\" means the report was saved.",
 		objSchema(map[string]any{
-			"finding_id":       map[string]any{"type": "integer", "description": "Target finding id (the id returned by report_finding)"},
+			"finding_id":       map[string]any{"type": "integer", "description": "Finding node id (the number in \"finding recorded: <id>\"); a standalone finding_id is accepted too"},
 			"report":           strParam("Full detailed report, Markdown"),
 			"evidence_version": map[string]any{"type": "integer", "description": "Evidence version returned by get_finding_traffic; prevents the report from overwriting newer evidence changes"},
 		}, "finding_id", "report"),
@@ -450,6 +452,18 @@ func (s *Server) toolUpdateFindingReport() actool.CoreTool {
 				return actool.Errorf("finding_id is invalid"), nil
 			}
 			fid, err := s.m.pg.FindingIDByNodeID(nodeID)
+			resolved := ""
+			if errors.Is(err, sql.ErrNoRows) {
+				// Agents mix up the node id with the standalone finding_id from the JSON. When the
+				// number is no finding node, it can only mean a finding record, so resolve it.
+				record := nodeID
+				node, lookupErr := s.m.pg.NodeIDByFindingID(record)
+				if lookupErr != nil || node <= 0 {
+					return actool.Errorf(fmt.Sprintf("finding_id=%d is neither a finding node id nor a finding record id; nothing was saved. Use the number from \"finding recorded: <id>\".", record)), nil
+				}
+				nodeID, fid, err = node, record, nil
+				resolved = fmt.Sprintf(" (finding record %d resolved to node %d)", record, node)
+			}
 			if err != nil {
 				return actool.Errorf(err.Error()), nil
 			}
@@ -468,7 +482,7 @@ func (s *Server) toolUpdateFindingReport() actool.CoreTool {
 			if n == 0 {
 				return actool.Errorf(fmt.Sprintf("no finding record found for finding_id=%d (record it with report_finding first)", nodeID)), nil
 			}
-			return actool.Text(fmt.Sprintf("finding %d report updated (%d chars)", nodeID, len(a.Report))), nil
+			return actool.Text(fmt.Sprintf("finding %d report updated (%d chars)%s", nodeID, len(a.Report), resolved)), nil
 		})
 }
 
@@ -539,7 +553,7 @@ func (s *Server) seedOrchestrationTools() {
 // reaches an old DB otherwise. Preserves each tool's agent binding + enabled flag.
 // Bump the flag whenever these tools' schemas/descriptions change in code.
 func (s *Server) refreshBuiltinToolSchemas() {
-	const flag = "tool_schema_refresh_v7_list_facts_paging"
+	const flag = "tool_schema_refresh_v8_finding_report_id"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
 		return
 	}

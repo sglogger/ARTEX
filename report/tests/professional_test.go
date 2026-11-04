@@ -39,7 +39,7 @@ func TestProfessionalHTMLStructure(t *testing.T) {
 	for _, want := range []string{
 		"Web assessment", "Ascano AG", "Management summary", "Scope and engagement", "Task #5", "Task #7",
 		"stage.example", "F-01", "SQL injection", "Merged from 2 original findings.", "https://stage.example/",
-		"The assessment identified 3 findings. The highest rating is Critical.", "curl -I https://api.example",
+		"The assessment identified 3 findings. The highest rating is Critical.", "curl -I https://api.example", "No detailed report has been written for this finding yet",
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("report misses %q", want)

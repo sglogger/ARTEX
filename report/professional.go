@@ -68,6 +68,7 @@ type proFinding struct {
 	Report    template.HTML
 	Merged    int
 	StaleNote bool
+	NoReport  bool
 }
 
 type proSeverity struct {
@@ -220,6 +221,7 @@ func ProfessionalHTML(in ProInput) (string, error) {
 			pf.Report = markdownHTML(rep, 3)
 			pf.StaleNote = f.EvidenceVersion != f.ReportEvidenceVersion && f.ReportEvidenceVersion != 0
 		}
+		pf.NoReport = pf.Report == ""
 		if in.IncludeEvidence || pf.Report == "" {
 			pf.Evidence = strings.TrimSpace(f.Evidence)
 		}
@@ -326,7 +328,7 @@ var proLabels = map[string]map[string]string{
 		"rate_info":     "Observations without direct security impact.",
 		"overview":      "Findings overview", "ref": "Ref.", "title": "Title", "severity": "Severity",
 		"details": "Detailed findings", "class": "Class", "assets": "Affected assets", "found": "Found", "summary": "Summary",
-		"evidence": "Evidence", "merged": "Merged from %d original findings.", "stale": "The evidence changed after this report was written.",
+		"evidence": "Evidence", "merged": "Merged from %d original findings.", "stale": "The evidence changed after this report was written.", "no_report": "No detailed report has been written for this finding yet; summary and evidence are shown as recorded.",
 		"no_findings":     "No findings in the selected scope.",
 		"disclaimer":      "Disclaimer",
 		"disclaimer_text": "This assessment is a point-in-time review of the systems in scope, carried out with the permission of their owner. It cannot guarantee that no further vulnerabilities exist. Findings depend on the access, time frame and rules of engagement of the test. The report is intended for the named recipient only.",
@@ -364,7 +366,7 @@ var proLabels = map[string]map[string]string{
 		"rate_info":     "Beobachtungen ohne direkte Sicherheitsauswirkung.",
 		"overview":      "Übersicht der Findings", "ref": "Ref.", "title": "Titel", "severity": "Schweregrad",
 		"details": "Findings im Detail", "class": "Kategorie", "assets": "Betroffene Assets", "found": "Gefunden", "summary": "Zusammenfassung",
-		"evidence": "Beleg", "merged": "Zusammengeführt aus %d ursprünglichen Findings.", "stale": "Die Belege wurden nach Erstellung dieses Berichts geändert.",
+		"evidence": "Beleg", "merged": "Zusammengeführt aus %d ursprünglichen Findings.", "stale": "Die Belege wurden nach Erstellung dieses Berichts geändert.", "no_report": "Für dieses Finding wurde noch kein Detailbericht erstellt; Zusammenfassung und Beleg werden wie erfasst gezeigt.",
 		"no_findings":     "Keine Findings im gewählten Umfang.",
 		"disclaimer":      "Haftungsausschluss",
 		"disclaimer_text": "Diese Prüfung ist eine Momentaufnahme der Systeme im Scope und wurde mit Zustimmung ihres Eigentümers durchgeführt. Sie kann nicht garantieren, dass keine weiteren Schwachstellen bestehen. Die Ergebnisse hängen von Zugang, Zeitrahmen und Rules of Engagement des Tests ab. Der Bericht ist ausschließlich für den genannten Empfänger bestimmt.",

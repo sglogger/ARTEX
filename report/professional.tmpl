@@ -191,6 +191,7 @@
     </table>
     {{if .Merged}}<p class="note">{{printf $.L.merged .Merged}}</p>{{end}}
     {{if .StaleNote}}<p class="note">{{$.L.stale}}</p>{{end}}
+    {{if .NoReport}}<p class="note">{{$.L.no_report}}</p>{{end}}
     {{if .Summary}}<h4>{{$.L.summary}}</h4><p>{{.Summary}}</p>{{end}}
     {{if .Report}}{{.Report}}{{end}}
     {{if .Evidence}}<h4>{{$.L.evidence}}</h4><pre>{{.Evidence}}</pre>{{end}}

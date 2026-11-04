@@ -423,6 +423,14 @@ func (d *DB) FindingIDByNodeID(nodeID int64) (id int64, err error) {
 	return
 }
 
+// NodeIDByFindingID returns the exploration node of a standalone finding record
+// (0 when the record has no node).
+func (d *DB) NodeIDByFindingID(findingID int64) (nodeID int64, err error) {
+	var n sql.NullInt64
+	err = d.QueryRow(`SELECT node_id FROM findings WHERE id=$1`, findingID).Scan(&n)
+	return n.Int64, err
+}
+
 // PopulateFindingTrafficIDs only enriches already-visible nodes. It performs no
 // discovery or ID guessing, and leaves the legacy node ID unchanged.
 func (s *ExplorationStore) PopulateFindingTrafficIDs(nodes []*Node) error {

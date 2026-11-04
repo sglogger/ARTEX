@@ -476,3 +476,28 @@ func TestFindingTrafficUTF8SegmentsAndInheritedWrites(t *testing.T) {
 		}
 	}
 }
+
+// Reporters pass the standalone finding_id instead of the node id; it used to fail
+// with "sql: no rows in result set" and the report was silently lost.
+func TestUpdateFindingReportResolvesRecordID(t *testing.T) {
+	s, f, _ := trafficEvidenceServer(t)
+	if _, err := s.m.pg.FindingIDByNodeID(f.FindingID); err == nil {
+		t.Skip("record id collides with a finding node id in this database")
+	}
+	ctx := context.Background()
+	result, err := s.toolUpdateFindingReport().Call(ctx, json.RawMessage(fmt.Sprintf(`{"finding_id":%d,"report":"## Overview\n\nresolved by record id"}`, f.FindingID)), nil)
+	if err != nil || result.IsError {
+		t.Fatal(result, err)
+	}
+	if !strings.Contains(result.Flatten(), fmt.Sprintf("finding record %d resolved to node %d", f.FindingID, f.NodeID)) {
+		t.Errorf("result should say how the id was resolved: %s", result.Flatten())
+	}
+	updated, err := s.m.pg.GetFinding(f.FindingID)
+	if err != nil || !strings.Contains(updated.Report, "resolved by record id") {
+		t.Fatalf("report not saved: %v %+v", err, updated)
+	}
+	result, _ = s.toolUpdateFindingReport().Call(ctx, json.RawMessage(`{"finding_id":987654321,"report":"x"}`), nil)
+	if !result.IsError || !strings.Contains(result.Flatten(), "nothing was saved") {
+		t.Errorf("unknown id must fail clearly: %s", result.Flatten())
+	}
+}
