@@ -30,6 +30,7 @@ Issues for this fork are welcome. Some updates may turn out to be regressions; p
 - Dependencies with known vulnerabilities updated (Next.js 16.4.5, `puppeteer-core` 25 for the `api-recon` skill, `klauspost/compress` 1.18.7).
 - [Vulnerability intelligence](#vulnerability-intelligence-and-research-agent): agents look up known CVEs for detected versions in NVD, OSV, Wordfence and WPScan, with CISA / ENISA EU / VulnCheck KEV status and EPSS; every source can be switched off, and answers are cached locally.
 - Researcher agent with web search that main agent and planner can ask research questions, answering with cited sources.
+- [Pentest toolset](#pentest-toolset) in the Docker image (nikto, wpscan, nuclei, ffuf, sqlmap, testssl.sh and more, plus SecLists) with a skill that tells the agents how to route each tool through the recording proxy.
 - [Projects](#projects-engagements): bundle tasks, chats and findings per engagement, switch the active project in the sidebar, and keep agents inside their project.
 - [Professional report](#professional-report-pdf): one click combines findings of several tasks into a PDF with cover page, management summary, scope, methodology and detailed findings (English or German).
 - Check intents finish properly: a worker is reminded to save its check result, "Budget exhausted" is only shown when a budget ran out, and intents without a saved result no longer keep a task with proven goals open.
@@ -149,6 +150,28 @@ Everything is cached locally under `data/vulnintel/`: downloaded feeds and every
 
 Lookups go through the web search egress proxy when one is set, never through the traffic recording proxy. The Researcher agent is created once on startup with web search enabled; its prompt, tools and run budget can be changed under **System → Agents**.
 
+## Pentest toolset
+
+The Docker image ships a curated Kali-style toolset that the agents call through their Bash tool. The skill [`pentest-tools`](skills/pentest-tools/SKILL.md) tells them which tools exist, which flags route each tool through the traffic recording proxy (many tools ignore `HTTP_PROXY`), which TLS analysers must stay off the proxy, and conservative rate limits. It is visible to the Auto, Pentest and Worker agents by default; other agents can enable it under **System → Agents**.
+
+| Area | Tools |
+| --- | --- |
+| Subdomains / DNS | subfinder, amass, dnsx, dnsrecon |
+| Ports / services | nmap, naabu, masscan |
+| HTTP probing and fingerprinting | httpx (ProjectDiscovery), whatweb, wafw00f |
+| Crawling and URL history | katana, gau |
+| Content and parameter discovery | ffuf, feroxbuster, gobuster, arjun |
+| Vulnerability scanners | nuclei (templates included), nikto, wapiti, wpscan |
+| Injection | sqlmap, dalfox, commix |
+| TLS | testssl.sh, sslscan, sslyze, tlsx |
+| Auth and tokens | jwt_tool, hydra, cewl |
+| Out-of-band, secrets | interactsh-client, trufflehog |
+| Windows / internal | impacket, enum4linux-ng, smbclient, nbtscan, ldapsearch, snmpwalk, onesixtyone |
+
+A curated SecLists subset (web content, API, CMS, DNS, fuzzing and credential lists) lives in `/usr/share/seclists`. Versions are pinned in [`docker/pentest-tools.sh`](docker/pentest-tools.sh); bump them there and rebuild the image. `--build-arg ARTEX_PENTEST_TOOLS=false` builds the image without the toolset. The prebuilt binaries (Releases) don't install anything: on a host without the tools, install them yourself (on Debian bookworm the script can be run as root) or use the Docker image.
+
+The approval gate still reviews every command. Bring your own API keys where a tool supports them, e.g. `wpscan --api-token`, or subfinder/amass provider keys in `~/.config`.
+
 ---
 
 ## Installation
@@ -213,7 +236,7 @@ docker compose up -d          # pulls the dgddw/artex image + postgres
 # → http://localhost:8787
 ```
 
-The image already includes common tools (ripgrep/curl/vim/npm/nmap…); `./skills` and `./data` are persisted through bind mounts.
+The image already includes common tools (ripgrep/curl/vim/npm) and the [pentest toolset](#pentest-toolset); `./skills` and `./data` are persisted through bind mounts.
 
 Remote MCP servers can use `http` (Streamable HTTP) or `sse` (legacy SSE) in the system settings.
 Legacy SSE servers usually open the event stream with `GET /sse` and then accept JSON-RPC requests at

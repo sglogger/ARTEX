@@ -31,6 +31,11 @@ RUN npm install -g @playwright/mcp@latest @playwright/cli@latest playwright@late
     && playwright-cli --help \
     && playwright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/*
+# Pentest toolset for the agents' Bash tool (nikto, wpscan, nuclei, ffuf, sqlmap, … + a SecLists subset);
+# versions are pinned in docker/pentest-tools.sh. --build-arg ARTEX_PENTEST_TOOLS=false skips it.
+ARG ARTEX_PENTEST_TOOLS=true
+COPY docker/pentest-tools.sh /tmp/pentest-tools.sh
+RUN ARTEX_PENTEST_TOOLS=$ARTEX_PENTEST_TOOLS bash /tmp/pentest-tools.sh && rm -f /tmp/pentest-tools.sh
 WORKDIR /app
 # Prebuilt binary for the matching architecture (dist/amd64/artex or dist/arm64/artex)
 COPY dist/${TARGETARCH}/artex /app/artex

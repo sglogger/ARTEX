@@ -4,6 +4,13 @@ Notable changes to this project are recorded in this file. The format follows [K
 
 ## [Unreleased]
 
+**Upgrade notes:** the pentest tools are part of the image, so rebuild or pull it (`docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build` for a local build). The image grows by about 1.6 GB. Updating only the binary through the UI does not add the tools.
+
+### Added
+
+- Pentest toolset in the Docker image for the agents' Bash tool: subfinder, amass, dnsx, dnsrecon, naabu, masscan, httpx, whatweb, wafw00f, katana, gau, ffuf, feroxbuster, gobuster, arjun, nuclei with its templates, nikto, wapiti, wpscan, sqlmap, dalfox, commix, testssl.sh, sslscan, sslyze, tlsx, jwt_tool, hydra, cewl, interactsh-client, trufflehog, impacket, enum4linux-ng, smbclient and more, plus a curated SecLists subset in `/usr/share/seclists`. Versions are pinned in `docker/pentest-tools.sh`; `--build-arg ARTEX_PENTEST_TOOLS=false` leaves them out.
+- Skill `pentest-tools`, visible to the Auto, Pentest and Worker agents by default: the installed tools, the proxy flag each tool needs so its traffic is recorded (nikto, wpscan, nuclei, ffuf and others ignore `HTTP_PROXY`), which TLS analysers must bypass the proxy, conservative rate limits, wordlist paths, and a command reference per tool.
+
 ## [0.7.0] - 2026-11-04
 
 **Upgrade notes:** on first start every existing task, chat and task category is moved into a new default project **Standard** (database migration runs automatically). Task category names are now unique per project instead of globally. API clients that should stay unfiltered need no change; sending `X-Artex-Project: <id>` (or `?project=<id>`) scopes lists to a project and creates new tasks and chats in it.
